@@ -1,5 +1,6 @@
-// main.go - Katzenpost client POP3/SMTP proxy binary.
+// main.go - Katzenpost client xmpp proxy binary.
 // Copyright (C) 2017  Yawning Angel.
+// Copyright (C) 2020  Christian Loehle.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -26,8 +27,8 @@ import (
 	"syscall"
 
 	"github.com/katzenpost/core/utils"
-	"github.com/katzenpost/mailproxy"
-	"github.com/katzenpost/mailproxy/config"
+	"github.com/katzenpost/xmppproxy"
+	"github.com/katzenpost/xmppproxy/config"
 	"github.com/katzenpost/playground"
 	"github.com/katzenpost/registration_client"
 	rclient "github.com/katzenpost/registration_client/mailproxy"
@@ -53,7 +54,7 @@ func main() {
 	socksNet := flag.String("torSocksNet", "tcp", "tor SOCKS network (e.g. tcp or unix)")
 	socksAddr := flag.String("torSocksAddr", "127.0.0.1:9150", "tor SOCKS address (e.g. 127.0.0.1:9050")
 
-	dataDir := flag.String("dataDir", "", "mailproxy data directory, defaults to ~/.mailproxy")
+	dataDir := flag.String("dataDir", "", "xmppproxy data directory, defaults to ~/.xmppproxy")
 
 	flag.Parse()
 
@@ -63,26 +64,26 @@ func main() {
 			return
 		}
 
-		// 1. ensure mailproxy data dir doesn't already exist
-		mailproxyDir := ""
+		// 1. ensure xmppproxy data dir doesn't already exist
+		xmppproxyDir := ""
 		if len(*dataDir) == 0 {
 			usr, err := user.Current()
 			if err != nil {
 				panic("failure to retrieve current user information")
 			}
-			mailproxyDir = path.Join(usr.HomeDir, ".mailproxy")
+			xmppproxyDir = path.Join(usr.HomeDir, ".xmppproxy")
 		} else {
-			mailproxyDir = *dataDir
+			xmppproxyDir = *dataDir
 		}
-		if _, err := os.Stat(mailproxyDir); !os.IsNotExist(err) {
-			panic(fmt.Sprintf("aborting registration, %s already exists", mailproxyDir))
+		if _, err := os.Stat(xmppproxyDir); !os.IsNotExist(err) {
+			panic(fmt.Sprintf("aborting registration, %s already exists", xmppproxyDir))
 		}
-		if err := utils.MkDataDir(mailproxyDir); err != nil {
+		if err := utils.MkDataDir(xmppproxyDir); err != nil {
 			panic(err)
 		}
 
-		// 2. generate mailproxy key material and configuration
-		linkKey, identityKey, err := rclient.GenerateConfig(*accountName, *providerName, *providerKey, *authority, *onionAuthority, *authorityKey, mailproxyDir, *socksNet, *socksAddr, *registerWithOnion)
+		// 2. generate xmppproxy key material and configuration
+		linkKey, identityKey, err := rclient.GenerateConfig(*accountName, *providerName, *providerKey, *authority, *onionAuthority, *authorityKey, xmppproxyDir, *socksNet, *socksAddr, *registerWithOnion)
 		if err != nil {
 			panic(err)
 		}
@@ -115,7 +116,7 @@ func main() {
 		}
 
 		fmt.Printf("Successfully registered %s@%s\n", *accountName, *providerName)
-		fmt.Printf("mailproxy -f %s\n", mailproxyDir+"/mailproxy.toml")
+		fmt.Printf("xmppproxy -f %s\n", xmppproxyDir+"/xmppproxy.toml")
 		return
 	}
 
@@ -133,9 +134,9 @@ func main() {
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 
 	// Start up the proxy.
-	proxy, err := mailproxy.New(cfg)
+	proxy, err := xmppproxy.New(cfg)
 	if err != nil {
-		if err == mailproxy.ErrGenerateOnly {
+		if err == xmppproxy.ErrGenerateOnly {
 			os.Exit(0)
 		}
 		fmt.Fprintf(os.Stderr, "Failed to spawn server instance: %v\n", err)

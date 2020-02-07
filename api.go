@@ -1,4 +1,4 @@
-// api.go - Katzenpost client mailproxy external API
+// api.go - Katzenpost client xmppproxy external API
 // Copyright (C) 2018  Yawning Angel, David Anthony Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package mailproxy
+package xmppproxy
 
 import (
 	"bytes"
@@ -26,19 +26,19 @@ import (
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/pki"
-	"github.com/katzenpost/mailproxy/event"
-	"github.com/katzenpost/mailproxy/internal/account"
-	"github.com/katzenpost/mailproxy/internal/imf"
+	"github.com/katzenpost/xmppproxy/event"
+	"github.com/katzenpost/xmppproxy/internal/account"
+	"github.com/katzenpost/xmppproxy/internal/imf"
 )
 
 var (
 	// ErrUnknownRecipient is the error that is returned when a recipient for
 	// which there is no public key is specified.
-	ErrUnknownRecipient = errors.New("mailproxy/api: unknown recipient, missing public key")
+	ErrUnknownRecipient = errors.New("xmppproxy/api: unknown recipient, missing public key")
 
 	// ErrNoMessages is the error that is returned when an account's receive
 	// queue is empty.
-	ErrNoMessages = errors.New("mailproxy/api: account receive queue empty")
+	ErrNoMessages = errors.New("xmppproxy/api: account receive queue empty")
 )
 
 // SendMessage enqueues payload for transmission from the sender to the

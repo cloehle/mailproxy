@@ -23,8 +23,8 @@ import (
 
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
-	"github.com/katzenpost/mailproxy/internal/pkiclient"
-	"github.com/katzenpost/mailproxy/internal/proxy"
+	"github.com/katzenpost/xmppproxy/internal/pkiclient"
+	"github.com/katzenpost/xmppproxy/internal/proxy"
 )
 
 var (

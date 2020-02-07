@@ -1,4 +1,4 @@
-module github.com/katzenpost/mailproxy
+module github.com/katzenpost/xmppproxy
 
 go 1.12
 

@@ -59,9 +59,9 @@ import (
 	bolt "github.com/coreos/bbolt"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/mailproxy/event"
-	"github.com/katzenpost/mailproxy/internal/imf"
-	"github.com/katzenpost/mailproxy/internal/pop3"
+	"github.com/katzenpost/xmppproxy/event"
+	"github.com/katzenpost/xmppproxy/internal/imf"
+	"github.com/katzenpost/xmppproxy/internal/pop3"
 	"github.com/katzenpost/minclient/block"
 )
 

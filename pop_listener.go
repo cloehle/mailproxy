@@ -14,13 +14,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package mailproxy
+package xmppproxy
 
 import (
 	"net"
 
 	"github.com/katzenpost/core/worker"
-	"github.com/katzenpost/mailproxy/internal/pop3"
+	"github.com/katzenpost/xmppproxy/internal/pop3"
 	"gopkg.in/op/go-logging.v1"
 )
 

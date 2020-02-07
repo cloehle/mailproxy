@@ -1,5 +1,6 @@
-// smtp_listener.go - SMTP listener.
+// xmpp_listener.go - XMPP listener.
 // Copyright (C) 2018  Yawning Angel.
+// Copyright (C) 2020  Christian Loehle.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -17,49 +18,29 @@
 package xmppproxy
 
 import (
-	"bytes"
-	"errors"
-	"fmt"
 	"net"
-	"sync/atomic"
-	"time"
 
-	"github.com/emersion/go-message"
 	"github.com/katzenpost/core/worker"
-	"github.com/katzenpost/xmppproxy/event"
-	"github.com/katzenpost/xmppproxy/internal/account"
-	"github.com/katzenpost/xmppproxy/internal/imf"
-	"github.com/siebenmann/smtpd"
 	"gopkg.in/op/go-logging.v1"
 )
 
-var (
-	smtpdCfg = smtpd.Config{
-		LocalName: imf.LocalName,
-		SftName:   "Katzenpost",
-		SayTime:   false,
-	}
-
-	errEnqueueAllFailed = errors.New("enqueue failed for ALL recipients, rejecting")
-)
-
-type smtpListener struct {
+type xmppListener struct {
 	worker.Worker
 
 	p   *Proxy
 	l   net.Listener
 	log *logging.Logger
-
-	connID uint64
 }
 
-func (l *smtpListener) Halt() {
-	// Close the listener and wait for the workers to return.
+func (l *xmppListener) Halt() {
+	// Close the listener and wait for the worker(s) to return.
 	l.l.Close()
 	l.Worker.Halt()
+
+	// TODO: Force close all XMPP sessions somehow.
 }
 
-func (l *smtpListener) worker() {
+func (l *xmppListener) worker() {
 	addr := l.l.Addr()
 	l.log.Noticef("Listening on: %v", addr)
 	defer func() {
@@ -76,11 +57,61 @@ func (l *smtpListener) worker() {
 			continue
 		}
 
-		l.onNewConn(conn)
+		rAddr := conn.RemoteAddr()
+		l.log.Debugf("Accepted new connection: %v", rAddr)
+		l.Go(func() { xmppServer.TCPAnswer(conn) })
 	}
 
 	// NOTREACHED
 }
+
+func newxmppListener(p *Proxy) (*xmppListener, error) {
+	l := new(xmppListener)
+	l.p = p
+	l.log = p.logBackend.GetLogger("listener/xmpp")
+
+	var err error
+	l.l, err = net.Listen("tcp", p.cfg.Proxy.xmppAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	var contacts = make(map[string]chan<- []byte)
+	var messagebus = make(chan xmpp.Message)
+	var connectbus = make(chan xmpp.Connect)
+	var disconnectbus = make(chan xmpp.Disconnect)
+
+	leader := talekcommon.NewFrontendRPC("rpc", talekconf.FrontendAddr)
+	backend := libtalek.NewClient("talexmpp", *talekconf, leader)
+
+	// restore from saved contact state
+
+	am := AccountManager{Online: contacts, Backend: backend, lock: &sync.Mutex{}}
+
+	xmppServer := &xmpp.Server{
+		Accounts:   am,
+		ConnectBus: connectbus,
+		Extensions: []xmpp.Extension{
+			&xmpp.NormalMessageExtension{MessageBus: messagebus},
+			&xmpp.RosterExtension{Accounts: am},
+			&GlueExtension{},
+			&RosterManagementExtension{Accounts: am, Client: backend},
+		},
+		DisconnectBus: disconnectbus,
+		Domain:        "localhost",
+		SkilTls:     true,
+	}
+
+	go am.routeRoutine(messagebus)
+	go am.connectRoutine(connectbus)
+	go am.disconnectRoutine(disconnectbus)
+
+
+	l.Go(l.worker)
+	return l, nil
+}
+
+//Start smtp part
 
 type enqueueLater struct {
 	replyID      string

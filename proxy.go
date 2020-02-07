@@ -1,5 +1,6 @@
-// proxy.go - Katzenpost client mailproxy.
+// proxy.go - Katzenpost client xmppproxy.
 // Copyright (C) 2017  Yawning Angel.
+// Copyright (C) 2020  Christian Loehle.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -14,8 +15,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package mailproxy implements a POP/SMTP to Katzenpost proxy server.
-package mailproxy
+// Package xmppproxy implements a XMPP to Katzenpost proxy server.
+package xmppproxy
 
 import (
 	"errors"
@@ -28,17 +29,17 @@ import (
 	"github.com/katzenpost/core/thwack"
 	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/worker"
-	"github.com/katzenpost/mailproxy/config"
-	"github.com/katzenpost/mailproxy/event"
-	"github.com/katzenpost/mailproxy/internal/account"
-	"github.com/katzenpost/mailproxy/internal/authority"
-	"github.com/katzenpost/mailproxy/internal/recipient"
+	"github.com/katzenpost/xmppproxy/config"
+	"github.com/katzenpost/xmppproxy/event"
+	"github.com/katzenpost/xmppproxy/internal/account"
+	"github.com/katzenpost/xmppproxy/internal/authority"
+	"github.com/katzenpost/xmppproxy/internal/recipient"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization
-var ErrGenerateOnly = errors.New("mailproxy: GenerateOnly set")
+var ErrGenerateOnly = errors.New("xmppproxy: GenerateOnly set")
 
 // Proxy is a mail proxy server instance.
 type Proxy struct {
@@ -52,8 +53,7 @@ type Proxy struct {
 	votingAuthorities    *authority.Store
 	nonvotingAuthorities *authority.Store
 	recipients           *recipient.Store
-	popListener          *popListener
-	smtpListener         *smtpListener
+	xmppListener         *xmppListener
 	eventListener        *eventListener
 	management           *thwack.Server
 
@@ -75,7 +75,7 @@ func (p *Proxy) initLogging() error {
 	var err error
 	p.logBackend, err = log.New(f, p.cfg.Logging.Level, p.cfg.Logging.Disable)
 	if err == nil {
-		p.log = p.logBackend.GetLogger("mailproxy")
+		p.log = p.logBackend.GetLogger("xmppproxy")
 	}
 	return err
 }
@@ -97,14 +97,9 @@ func (p *Proxy) halt() {
 
 	p.log.Noticef("Starting graceful shutdown.")
 
-	if p.popListener != nil {
-		p.popListener.Halt()
-		p.popListener = nil
-	}
-
-	if p.smtpListener != nil {
-		p.smtpListener.Halt()
-		p.smtpListener = nil
+	if p.xmppListener != nil {
+		p.xmppListener.Halt()
+		p.xmppListener = nil
 	}
 
 	if p.management != nil {
@@ -188,7 +183,7 @@ func New(cfg *config.Config) (*Proxy, error) {
 		mgmtCfg := &thwack.Config{
 			Net:         "unix",
 			Addr:        p.cfg.Management.Path,
-			ServiceName: "Katzenpost Mailproxy Management Interface",
+			ServiceName: "Katzenpost Xmppproxy Management Interface",
 			LogModule:   "mgmt",
 			NewLoggerFn: p.logBackend.GetLogger,
 		}
@@ -258,19 +253,15 @@ func New(cfg *config.Config) (*Proxy, error) {
 	p.eventListener = newEventListener(p)
 
 	if !p.cfg.Proxy.NoLaunchListeners {
-		// Bring the POP3 interface online.
-		if p.popListener, err = newPOPListener(p); err != nil {
-			p.log.Errorf("Failed to start POP3 listener: %v", err)
+		// Bring the XMPP interface online.
+		if p.xmppListener, err = newXMPPListener(p); err != nil {
+			p.log.Errorf("Failed to start XMPP listener: %v", err)
 			return nil, err
 		}
 
-		// Bring the SMTP interface online.
-		if p.smtpListener, err = newSMTPListener(p); err != nil {
-			p.log.Errorf("Failed to start SMTP listener: %v", err)
-			return nil, err
 		}
 	} else {
-		p.log.Debugf("Skipping POP3/SMTP listener initialization.")
+		p.log.Debugf("Skipping XMPP listener initialization.")
 	}
 
 	// Start listening on the management if enabled, now that all subsystems

@@ -15,13 +15,13 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Package glue implements the internal interfaces used to glue the
-// various mailproxy components together.
+// various xmppproxy components together.
 package glue
 
 import (
 	"github.com/katzenpost/core/log"
-	"github.com/katzenpost/mailproxy/config"
-	"github.com/katzenpost/mailproxy/internal/authority"
+	"github.com/katzenpost/xmppproxy/config"
+	"github.com/katzenpost/xmppproxy/internal/authority"
 )
 
 // ProxyInternals gives submodules access to proxy internals.

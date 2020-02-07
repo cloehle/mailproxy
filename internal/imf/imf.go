@@ -196,7 +196,7 @@ func AddReceived(e *message.Entity, isMSA bool, viaESMTP bool) {
 	} else {
 		hdrStr = "from mixnetwork.invalid (mixnetwork.invalid [127.0.0.2]) "
 	}
-	hdrStr += "by " + LocalName + " (Katzenpost mailproxy) "
+	hdrStr += "by " + LocalName + " (Katzenpost xmppproxy) "
 	if viaESMTP {
 		hdrStr += "with ESMTP "
 	} else {

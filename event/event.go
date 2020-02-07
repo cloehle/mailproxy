@@ -1,4 +1,4 @@
-// event.go - Katzenpost client mailproxy API events.
+// event.go - Katzenpost client xmppproxy API events.
 // Copyright (C) 2018  Yawning Angel.
 //
 // This program is free software: you can redistribute it and/or modify

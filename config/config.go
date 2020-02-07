@@ -1,5 +1,6 @@
-// config.go - Katzenpost client mail proxy configuration.
+// config.go - Katzenpost client xmpp proxy configuration.
 // Copyright (C) 2017  Yawning Angel.
+// Copyright (C) 2020  Christian Loehle.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -14,7 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package config implements the configuration for the Katzenpost client mail
+// Package config implements the configuration for the Katzenpost client xmpp
 // proxy.
 package config
 
@@ -22,7 +23,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"net/mail"
 	"path/filepath"
 	"strings"
 
@@ -35,15 +35,14 @@ import (
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/utils"
-	"github.com/katzenpost/mailproxy/internal/authority"
-	"github.com/katzenpost/mailproxy/internal/proxy"
+	"github.com/katzenpost/xmppproxy/internal/authority"
+	"github.com/katzenpost/xmppproxy/internal/proxy"
 	"golang.org/x/net/idna"
 	"golang.org/x/text/secure/precis"
 )
 
 const (
-	defaultPOP3Addr            = "127.0.0.1:2524"
-	defaultSMTPAddr            = "127.0.0.1:2525"
+	defaultXMPPAddr            = "127.0.0.1:5222"
 	defaultLogLevel            = "NOTICE"
 	defaultManagementSocket    = "management_sock"
 	defaultBounceQueueLifetime = 432000 // 5 days.
@@ -58,34 +57,28 @@ var defaultLogging = Logging{
 	Level:   defaultLogLevel,
 }
 
-// Proxy is the mail proxy configuration.
+// Proxy is the xmpp proxy configuration.
 type Proxy struct {
-	// POP3Address is the IP address/port combination that the mail proxy will
-	// bind to for POP3 access.  If omitted `127.0.0.1:2524` will be used.
-	POP3Address string
 
-	// SMTPAddress is the IP address/port combination that the mail proxy will
-	// bind to for SMTP access.  If omitted `127.0.0.1:2525` will be used.
-	SMTPAddress string
+	// XMPPAddress is the IP address/port combination that the xmpp proxy will
+	// bind to for XMPP access.  If omitted `127.0.0.1:5222` will be used.
+	XMPPAddress string
 
-	// DataDir is the absolute path to the mail proxy's state files.
+	// DataDir is the absolute path to the xmpp proxy's state files.
 	DataDir string
 
-	// RecipientDir is the absolute path to the mail proxy's recipient files.
+	// RecipientDir is the absolute path to the xmpp proxy's recipient files.
 	RecipientDir string
 
-	// NoLaunchListeners disables the POP3 and SMTP interfaces, which is
-	// useful if you are using mailproxy as a library rather than a
+	// NoLaunchListeners disables the xmpp interfaces, which is
+	// useful if you are using xmppproxy as a library rather than a
 	// stand-alone process.
 	NoLaunchListeners bool
 }
 
 func (pCfg *Proxy) applyDefaults() {
-	if pCfg.POP3Address == "" {
-		pCfg.POP3Address = defaultPOP3Addr
-	}
-	if pCfg.SMTPAddress == "" {
-		pCfg.SMTPAddress = defaultSMTPAddr
+	if pCfg.XMPPAddress == "" {
+		pCfg.XMPPAddress = defaultxmppAddr
 	}
 	if pCfg.RecipientDir == "" {
 		pCfg.RecipientDir = filepath.Join(pCfg.DataDir, "recipients")
@@ -94,11 +87,8 @@ func (pCfg *Proxy) applyDefaults() {
 
 func (pCfg *Proxy) validate() error {
 	if !pCfg.NoLaunchListeners {
-		if err := utils.EnsureAddrIPPort(pCfg.POP3Address); err != nil {
-			return fmt.Errorf("config: Proxy: POP3Address '%v' is invalid: %v", pCfg.POP3Address, err)
-		}
-		if err := utils.EnsureAddrIPPort(pCfg.SMTPAddress); err != nil {
-			return fmt.Errorf("config: Proxy: SMTPAddress '%v' is invalid: %v", pCfg.SMTPAddress, err)
+		if err := utils.EnsureAddrIPPort(pCfg.XMPPAddress); err != nil {
+			return fmt.Errorf("config: Proxy: XMPPAddress '%v' is invalid: %v", pCfg.XMPPAddress, err)
 		}
 	}
 	if !filepath.IsAbs(pCfg.DataDir) {
@@ -107,7 +97,7 @@ func (pCfg *Proxy) validate() error {
 	return nil
 }
 
-// Logging is the mail proxy logging configuration.
+// Logging is the xmpp proxy logging configuration.
 type Logging struct {
 	// Disable disables logging entirely.
 	Disable bool
@@ -132,7 +122,7 @@ func (lCfg *Logging) validate() error {
 	return nil
 }
 
-// Debug is the mail proxy debug configuration.
+// Debug is the xmpp proxy debug configuration.
 type Debug struct {
 	// ReceiveTimeout is the time in seconds after which the inbound
 	// message processor will give up on a partially received message
@@ -140,11 +130,11 @@ type Debug struct {
 	// If set to 0 (the default), the timeout is infinite.
 	ReceiveTimeout int
 
-	// BounceQueueLifetime is the minimum time in seconds till the mail
-	// proxy will give up on sending a particular e-mail.
+	// BounceQueueLifetime is the minimum time in seconds till the xmpp
+	// proxy will give up on sending a particular e-xmpp.
 	BounceQueueLifetime int
 
-	// UrgentQueueLifetime is the minimum time in seconds till the mail
+	// UrgentQueueLifetime is the minimum time in seconds till the xmpp
 	// proxy will give up on sending urgent (Kaetzchen) requests.
 	UrgentQueueLifetime int
 
@@ -173,7 +163,7 @@ type Debug struct {
 	// traffic is more concrete.
 	SendDecoyTraffic bool
 
-	// GenerateOnly halts and cleans up the mail proxy right after long term
+	// GenerateOnly halts and cleans up the xmpp proxy right after long term
 	// key generation.
 	GenerateOnly bool
 }
@@ -196,7 +186,7 @@ func (dCfg *Debug) applyDefaults() {
 	}
 }
 
-// VotingPeer is the mail proxy authority peer configuration.
+// VotingPeer is the xmpp proxy authority peer configuration.
 type VotingPeer struct {
 	// Address is the IP address/port combination of the authority.
 	Addresses []string
@@ -308,7 +298,7 @@ type Account struct {
 	StorageKey *ecdh.PrivateKey `toml:"-"`
 
 	// InsecureKeyDiscovery enables automatic fetching of recipient keys.
-	// This option is disabled by default as mailproxy provides no UX for
+	// This option is disabled by default as xmppproxy provides no UX for
 	// verifying keys.
 	InsecureKeyDiscovery bool
 }
@@ -327,10 +317,10 @@ func (accCfg *Account) fixup(cfg *Config) error {
 	return err
 }
 
-func (accCfg *Account) toEmailAddr() (string, error) {
+func (accCfg *Account) toExmppAddr() (string, error) {
 	addr := fmt.Sprintf("%s@%s", accCfg.User, accCfg.Provider)
-	if _, err := mail.ParseAddress(addr); err != nil {
-		return "", fmt.Errorf("User/Provider does not form a valid e-mail address: %v", err)
+	if _, err := xmpp.ParseAddress(addr); err != nil {
+		return "", fmt.Errorf("User/Provider does not form a valid e-xmpp address: %v", err)
 	}
 	return addr, nil
 }
@@ -350,7 +340,7 @@ func (accCfg *Account) validate(cfg *Config) error {
 	return nil
 }
 
-// Management is the mailproxy management interface configuration.
+// Management is the xmppproxy management interface configuration.
 type Management struct {
 	// Enable enables the management interface.
 	Enable bool
@@ -376,7 +366,7 @@ func (mCfg *Management) validate() error {
 	return nil
 }
 
-// UpstreamProxy is the mailproxy outgoing connection proxy configuration.
+// UpstreamProxy is the xmppproxy outgoing connection proxy configuration.
 type UpstreamProxy struct {
 	// PreferedTransports is a list of the transports will be used to make
 	// outgoing network connections, with the most prefered first.
@@ -415,7 +405,7 @@ func (uCfg *UpstreamProxy) toProxyConfig() (*proxy.Config, error) {
 	return cfg, nil
 }
 
-// Config is the top level mail proxy configuration.
+// Config is the top level xmpp proxy configuration.
 type Config struct {
 	Proxy         *Proxy
 	Logging       *Logging
@@ -534,7 +524,7 @@ func (cfg *Config) FixupAndValidate() error {
 		if err := v.fixup(cfg); err != nil {
 			return fmt.Errorf("config: Account #%d is invalid (User): %v", idx, err)
 		}
-		addr, err := v.toEmailAddr()
+		addr, err := v.toExmppAddr()
 		if err != nil {
 			return fmt.Errorf("config: Account #%d is invalid (Identifier): %v", idx, err)
 		}

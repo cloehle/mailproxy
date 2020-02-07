@@ -22,10 +22,10 @@ import (
 	"sync"
 
 	"github.com/katzenpost/core/log"
-	"github.com/katzenpost/mailproxy/config"
-	"github.com/katzenpost/mailproxy/internal/authority"
-	"github.com/katzenpost/mailproxy/internal/glue"
-	"github.com/katzenpost/mailproxy/internal/pop3"
+	"github.com/katzenpost/xmppproxy/config"
+	"github.com/katzenpost/xmppproxy/internal/authority"
+	"github.com/katzenpost/xmppproxy/internal/glue"
+	"github.com/katzenpost/xmppproxy/internal/pop3"
 )
 
 var (

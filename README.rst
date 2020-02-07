@@ -1,18 +1,18 @@
 
 
-.. image:: https://travis-ci.org/katzenpost/mailproxy.svg?branch=master
-  :target: https://travis-ci.org/katzenpost/mailproxy
+.. image:: https://travis-ci.org/katzenpost/xmppproxy.svg?branch=master
+  :target: https://travis-ci.org/katzenpost/xmppproxy
 
-.. image:: https://godoc.org/github.com/katzenpost/mailproxy?status.svg
-  :target: https://godoc.org/github.com/katzenpost/mailproxy
+.. image:: https://godoc.org/github.com/katzenpost/xmppproxy?status.svg
+  :target: https://godoc.org/github.com/katzenpost/xmppproxy
 
 
-mailproxy - POP/SMTP to Katzenpost proxy server
+xmppproxy - xmpp to Katzenpost proxy server
 ===============================================
 
-This is a implementation of a proxy server that exposes a POP/SMTP interface
+This is a implementation of a proxy server that exposes a xmpp interface
 to Katzenpost based mix networks. It is intended to run on a user's localhost
-to allow standard mail clients to send and receive mail over the mixnet.
+to allow standard xmpp clients to send and receive mail over the mixnet.
 
 
 Building
@@ -25,24 +25,24 @@ Build the mix server like this:
 ::
 
    export GO111MODULE=on
-   cd cmd/mailproxy
+   cd cmd/xmppproxy
    go build
 
 
 Basic Usage
 --------
 
-Mailproxy can generate the keys, configuration file and perform the registration
+xmppproxy can generate the keys, configuration file and perform the registration
 via HTTP all in one call using the `-r` option:
 ::
 
-   ./mailproxy -r -authority 127.0.0.1:29483 -authorityKey "o4w1Nyj/nKNwho5SWfAIfh7SMU8FRx52nMHGgYsMHqQ=" -registrationAddr 127.0.0.1:8000 -registrationWithoutHttps -provider provider1 -providerKey "2krwfNDfbakZCSTUUZYKXwdduzlEgS9Jfwm7eyZ0sCg=" -account alice
+   ./xmppproxy -r -authority 127.0.0.1:29483 -authorityKey "o4w1Nyj/nKNwho5SWfAIfh7SMU8FRx52nMHGgYsMHqQ=" -registrationAddr 127.0.0.1:8000 -registrationWithoutHttps -provider provider1 -providerKey "2krwfNDfbakZCSTUUZYKXwdduzlEgS9Jfwm7eyZ0sCg=" -account alice
 
 
 The daemon can then be run using:
 ::
 
-   ./mailproxy -f ~/.mailproxy/mailproxy.toml
+   ./xmppproxy -f ~/.xmppproxy/xmppproxy.toml
 
 Now you can either set up any mail client or use swaks and curl.
 Sending test messages with swaks:
