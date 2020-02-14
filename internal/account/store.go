@@ -22,10 +22,9 @@ import (
 	"sync"
 
 	"github.com/katzenpost/core/log"
-	"github.com/katzenpost/xmppproxy/config"
-	"github.com/katzenpost/xmppproxy/internal/authority"
-	"github.com/katzenpost/xmppproxy/internal/glue"
-	"github.com/katzenpost/xmppproxy/internal/pop3"
+	"github.com/cloehle/xmppproxy/config"
+	"github.com/cloehle/xmppproxy/internal/authority"
+	"github.com/cloehle/xmppproxy/internal/glue"
 )
 
 var (
@@ -86,6 +85,7 @@ func (s *Store) Get(id string) (*Account, error) {
 	return nil, errNoSuchAccount
 }
 
+/*
 // NewSession creates a new pop3.BackendSession backed by the specified user,
 // where the user is of the form `user@provider`.
 func (s *Store) NewSession(user, pass []byte) (pop3.BackendSession, error) {
@@ -100,7 +100,7 @@ func (s *Store) NewSession(user, pass []byte) (pop3.BackendSession, error) {
 		return nil, pop3.ErrBackendFail
 	}
 	return sess, nil
-}
+}*/
 
 // Reset clears the existing Store instance, terminating clients associated
 // with each account entry.

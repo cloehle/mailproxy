@@ -20,8 +20,8 @@ package glue
 
 import (
 	"github.com/katzenpost/core/log"
-	"github.com/katzenpost/xmppproxy/config"
-	"github.com/katzenpost/xmppproxy/internal/authority"
+	"github.com/cloehle/xmppproxy/config"
+	"github.com/cloehle/xmppproxy/internal/authority"
 )
 
 // ProxyInternals gives submodules access to proxy internals.

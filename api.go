@@ -26,9 +26,9 @@ import (
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/pki"
-	"github.com/katzenpost/xmppproxy/event"
-	"github.com/katzenpost/xmppproxy/internal/account"
-	"github.com/katzenpost/xmppproxy/internal/imf"
+	"github.com/cloehle/xmppproxy/event"
+	"github.com/cloehle/xmppproxy/internal/account"
+	"github.com/cloehle/xmppproxy/internal/imf"
 )
 
 var (

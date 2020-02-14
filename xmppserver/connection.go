@@ -1,4 +1,4 @@
-package xmpp
+package xmppserver
 
 import (
 	"encoding/xml"

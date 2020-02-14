@@ -29,11 +29,11 @@ import (
 	"github.com/katzenpost/core/thwack"
 	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/worker"
-	"github.com/katzenpost/xmppproxy/config"
-	"github.com/katzenpost/xmppproxy/event"
-	"github.com/katzenpost/xmppproxy/internal/account"
-	"github.com/katzenpost/xmppproxy/internal/authority"
-	"github.com/katzenpost/xmppproxy/internal/recipient"
+	"github.com/cloehle/xmppproxy/config"
+	"github.com/cloehle/xmppproxy/event"
+	"github.com/cloehle/xmppproxy/internal/account"
+	"github.com/cloehle/xmppproxy/internal/authority"
+	"github.com/cloehle/xmppproxy/internal/recipient"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -259,7 +259,6 @@ func New(cfg *config.Config) (*Proxy, error) {
 			return nil, err
 		}
 
-		}
 	} else {
 		p.log.Debugf("Skipping XMPP listener initialization.")
 	}

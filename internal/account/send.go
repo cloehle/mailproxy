@@ -75,8 +75,8 @@ import (
 	"github.com/katzenpost/core/sphinx"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/utils"
-	"github.com/katzenpost/xmppproxy/event"
-	"github.com/katzenpost/xmppproxy/internal/imf"
+	"github.com/cloehle/xmppproxy/event"
+	"github.com/cloehle/xmppproxy/internal/imf"
 	"github.com/katzenpost/minclient/block"
 )
 

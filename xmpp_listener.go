@@ -22,10 +22,22 @@ import (
 
 	"github.com/katzenpost/core/worker"
 	"gopkg.in/op/go-logging.v1"
+    "github.com/cloehle/xmppproxy/xmppserver"
+    "github.com/cloehle/xmppproxy/internal/xmpp"
+
+    "sync"
+    //SMTP:
+    "github.com/cloehle/xmppproxy/internal/account"
+    "github.com/cloehle/xmppproxy/internal/imf"
+    "github.com/cloehle/xmppproxy/event"
+    "github.com/emersion/go-message"
+    "time"
+    "errors"
 )
 
 type xmppListener struct {
 	worker.Worker
+    server xmppserver.Server
 
 	p   *Proxy
 	l   net.Listener
@@ -59,53 +71,53 @@ func (l *xmppListener) worker() {
 
 		rAddr := conn.RemoteAddr()
 		l.log.Debugf("Accepted new connection: %v", rAddr)
-		l.Go(func() { xmppServer.TCPAnswer(conn) })
+		l.Go(func() { l.server.TCPAnswer(conn) })
 	}
 
 	// NOTREACHED
 }
 
-func newxmppListener(p *Proxy) (*xmppListener, error) {
+func newXMPPListener(p *Proxy) (*xmppListener, error) {
 	l := new(xmppListener)
 	l.p = p
 	l.log = p.logBackend.GetLogger("listener/xmpp")
 
 	var err error
-	l.l, err = net.Listen("tcp", p.cfg.Proxy.xmppAddress)
+	l.l, err = net.Listen("tcp", p.cfg.Proxy.XMPPAddress)
 	if err != nil {
 		return nil, err
 	}
 
 	var contacts = make(map[string]chan<- []byte)
-	var messagebus = make(chan xmpp.Message)
-	var connectbus = make(chan xmpp.Connect)
-	var disconnectbus = make(chan xmpp.Disconnect)
+	var messagebus = make(chan xmppserver.Message)
+	var connectbus = make(chan xmppserver.Connect)
+	var disconnectbus = make(chan xmppserver.Disconnect)
 
+    /*
 	leader := talekcommon.NewFrontendRPC("rpc", talekconf.FrontendAddr)
 	backend := libtalek.NewClient("talexmpp", *talekconf, leader)
-
+    */
 	// restore from saved contact state
 
-	am := AccountManager{Online: contacts, Backend: backend, lock: &sync.Mutex{}}
+	am := xmpp.AccountManager{Online: contacts, OnlineLock: &sync.Mutex{}}
 
-	xmppServer := &xmpp.Server{
+	l.server = xmppserver.Server{
 		Accounts:   am,
 		ConnectBus: connectbus,
-		Extensions: []xmpp.Extension{
-			&xmpp.NormalMessageExtension{MessageBus: messagebus},
-			&xmpp.RosterExtension{Accounts: am},
+		Extensions: []xmppserver.Extension{
+			&xmppserver.NormalMessageExtension{MessageBus: messagebus},
+			&xmppserver.RosterExtension{Accounts: am},
 			&GlueExtension{},
-			&RosterManagementExtension{Accounts: am, Client: backend},
+			&xmpp.RosterManagementExtension{Accounts: am},
 		},
 		DisconnectBus: disconnectbus,
 		Domain:        "localhost",
-		SkilTls:     true,
+		SkipTLS:     true,
 	}
 
-	go am.routeRoutine(messagebus)
-	go am.connectRoutine(connectbus)
-	go am.disconnectRoutine(disconnectbus)
-
+	go am.RouteRoutine(messagebus)
+	go am.ConnectRoutine(connectbus)
+	go am.DisconnectRoutine(disconnectbus)
 
 	l.Go(l.worker)
 	return l, nil
@@ -240,20 +252,6 @@ func (l *eventListener) worker() {
 	}
 }
 
-func (l *smtpListener) onNewConn(conn net.Conn) error {
-	l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())
-
-	s := new(smtpSession)
-	s.l = l
-	s.id = atomic.AddUint64(&l.connID, 1)
-	s.log = l.p.logBackend.GetLogger(fmt.Sprintf("SMTP:%d", s.id))
-	s.nConn = conn
-	s.sConn = smtpd.NewConn(conn, smtpdCfg, s)
-
-	l.Go(func() { s.worker() })
-	return nil
-}
-
 func newEventListener(p *Proxy) *eventListener {
 	l := new(eventListener)
 	l.p = p
@@ -262,7 +260,7 @@ func newEventListener(p *Proxy) *eventListener {
 	l.Go(l.worker)
 	return l
 }
-
+/*
 func newSMTPListener(p *Proxy) (*smtpListener, error) {
 	l := new(smtpListener)
 	l.p = p
@@ -501,3 +499,4 @@ func (e *smtpEnvelope) Reset() {
 	e.SetAccount("", nil)
 	e.recipients = nil
 }
+*/

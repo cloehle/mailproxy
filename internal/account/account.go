@@ -27,10 +27,10 @@ import (
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/worker"
-	"github.com/katzenpost/xmppproxy/config"
-	"github.com/katzenpost/xmppproxy/event"
-	"github.com/katzenpost/xmppproxy/internal/authority"
-	"github.com/katzenpost/xmppproxy/internal/proxy"
+	"github.com/cloehle/xmppproxy/config"
+	"github.com/cloehle/xmppproxy/event"
+	"github.com/cloehle/xmppproxy/internal/authority"
+	"github.com/cloehle/xmppproxy/internal/proxy"
 	"github.com/katzenpost/minclient"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -52,7 +52,7 @@ type Account struct {
 	identityKey *ecdh.PrivateKey
 	storageKey  *ecdh.PrivateKey
 
-	popSession *popSession
+	//popSession *popSession
 
 	id string
 
@@ -105,11 +105,11 @@ func (a *Account) GetID() string {
 func (a *Account) doCleanup() {
 	a.Halt()
 
-	if a.popSession != nil {
+	/*if a.popSession != nil {
 		// This should never happen, the POP3 server is torn down before
 		// everything else...
 		a.log.Warningf("POP3 session still open on account teardown.")
-	}
+	}*/
 	if a.client != nil {
 		a.client.Shutdown()
 		a.client = nil

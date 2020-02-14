@@ -24,6 +24,8 @@ github.com/katzenpost/authority v0.0.8 h1:3dQ5F36i4H2assCpLFfrbw2koJgNCfYnWN1TPR
 github.com/katzenpost/authority v0.0.8/go.mod h1:U6Tog6bcOGQ6Yq0cQi9DEyy2pHqRMLttkuG7WoVh9xU=
 github.com/katzenpost/core v0.0.7 h1:ZI4oYACe/3n2iS2XsCccGbTFdhhRJunjFW05Utwna+g=
 github.com/katzenpost/core v0.0.7/go.mod h1:UXMLmMXlBHrhMXhWTy4DvCXqwTRLOh4DP/mR1Cm1sR8=
+github.com/katzenpost/mailproxy v0.0.6 h1:Rs60nJ2HSpcWuHbJKoIcysaczy5oidHYTcTloMH+nLM=
+github.com/katzenpost/mailproxy v0.0.6/go.mod h1:2h8OagwFBmynMxl8nOvhTUoCLyEkrLATcfbenUjsgxc=
 github.com/katzenpost/minclient v0.0.5 h1:lUPG4D7MQkBb1qEQOx/EFKjrJMVZJOLctiSUY1sWJ5I=
 github.com/katzenpost/minclient v0.0.5/go.mod h1:iP6HqTQzuNuyMYhzXL6pPWwthAmB7AgFEEGMm2G0XVc=
 github.com/katzenpost/noise v0.0.0-20190323135632-a6bec72d870a h1:QCmP/UbhJ5Y4rZhZn9yt9T6i2iMHKbCve62OaTQ5bzg=

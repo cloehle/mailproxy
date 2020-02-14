@@ -29,7 +29,7 @@ import (
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/thwack"
-	"github.com/katzenpost/xmppproxy/config"
+	"github.com/cloehle/xmppproxy/config"
 	"golang.org/x/net/idna"
 	"golang.org/x/text/secure/precis"
 )

@@ -25,6 +25,7 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"strings"
+    "net/mail"
 
 	"github.com/BurntSushi/toml"
 	nvClient "github.com/katzenpost/authority/nonvoting/client"
@@ -35,8 +36,8 @@ import (
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/utils"
-	"github.com/katzenpost/xmppproxy/internal/authority"
-	"github.com/katzenpost/xmppproxy/internal/proxy"
+	"github.com/cloehle/xmppproxy/internal/authority"
+	"github.com/cloehle/xmppproxy/internal/proxy"
 	"golang.org/x/net/idna"
 	"golang.org/x/text/secure/precis"
 )
@@ -78,7 +79,7 @@ type Proxy struct {
 
 func (pCfg *Proxy) applyDefaults() {
 	if pCfg.XMPPAddress == "" {
-		pCfg.XMPPAddress = defaultxmppAddr
+		pCfg.XMPPAddress = defaultXMPPAddr
 	}
 	if pCfg.RecipientDir == "" {
 		pCfg.RecipientDir = filepath.Join(pCfg.DataDir, "recipients")
@@ -317,11 +318,11 @@ func (accCfg *Account) fixup(cfg *Config) error {
 	return err
 }
 
-func (accCfg *Account) toExmppAddr() (string, error) {
+func (accCfg *Account) toXMPPAddr() (string, error) {
 	addr := fmt.Sprintf("%s@%s", accCfg.User, accCfg.Provider)
-	if _, err := xmpp.ParseAddress(addr); err != nil {
+	if _, err := mail.ParseAddress(addr); err != nil {
 		return "", fmt.Errorf("User/Provider does not form a valid e-xmpp address: %v", err)
-	}
+    }//TODO: mail and xmpp validation equal?
 	return addr, nil
 }
 
@@ -524,7 +525,7 @@ func (cfg *Config) FixupAndValidate() error {
 		if err := v.fixup(cfg); err != nil {
 			return fmt.Errorf("config: Account #%d is invalid (User): %v", idx, err)
 		}
-		addr, err := v.toExmppAddr()
+		addr, err := v.toXMPPAddr()
 		if err != nil {
 			return fmt.Errorf("config: Account #%d is invalid (Identifier): %v", idx, err)
 		}

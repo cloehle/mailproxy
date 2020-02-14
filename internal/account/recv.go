@@ -59,9 +59,8 @@ import (
 	bolt "github.com/coreos/bbolt"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/xmppproxy/event"
-	"github.com/katzenpost/xmppproxy/internal/imf"
-	"github.com/katzenpost/xmppproxy/internal/pop3"
+	"github.com/cloehle/xmppproxy/event"
+	"github.com/cloehle/xmppproxy/internal/imf"
 	"github.com/katzenpost/minclient/block"
 )
 
@@ -611,7 +610,7 @@ func (a *Account) ReceivePeekPop(isPop bool) ([]byte, *ecdh.PublicKey, []byte, e
 
 	return msg, sender, msgID, err
 }
-
+/*
 func (a *Account) newPOPSession() (pop3.BackendSession, error) {
 	a.Lock()
 	defer a.Unlock()
@@ -694,7 +693,7 @@ func (s *popSession) Close() {
 	s.a.popSession = nil
 
 	s.a.log.Noticef("POP3 session closed.")
-}
+}*/
 
 func blkToStr(pk *ecdh.PublicKey, blk *block.Block) string {
 	return fmt.Sprintf("[%v:%v]: %v/%v, %v bytes", pk, hex.EncodeToString(blk.MessageID[:]), blk.BlockID, blk.TotalBlocks, len(blk.Payload))
