@@ -180,7 +180,7 @@ func (state *AuthedStream) Process(c *Connection, client *Client, s *Server) (St
 			client.resourcepart = makeResource()
 		}
 		if client.domainpart == "" {
-			client.domainpart = "talexmpp"
+			client.domainpart = "katzenpost"
 		}
 		client.jid = client.localpart + "@" + client.domainpart + "/" + client.resourcepart
 		c.SendRawf("<iq id='%s' type='result'><bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'><jid>%s</jid></bind></iq>", v.ID, client.jid)

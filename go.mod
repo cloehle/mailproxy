@@ -3,12 +3,9 @@ module github.com/cloehle/xmppproxy
 go 1.12
 
 require (
-	git.schwanenlied.me/yawning/aez.git v0.0.0-20180408160647-ec7426b44926 // indirect
-	git.schwanenlied.me/yawning/bsaes.git v0.0.0-20190320102049-26d1add596b6 // indirect
 	git.schwanenlied.me/yawning/chacha20.git v0.0.0-20170904085104-e3b1f968fc63 // indirect
 	git.schwanenlied.me/yawning/newhope.git v0.0.0-20170622154529-9598792ba8f2 // indirect
 	github.com/BurntSushi/toml v0.3.1
-	github.com/agl/ed25519 v0.0.0-20170116200512-5312a6153412 // indirect
 
 	github.com/cloehle/xmppproxy/xmppserver v0.0.0
 	github.com/coreos/bbolt v1.3.3
@@ -16,10 +13,10 @@ require (
 	github.com/emersion/go-message v0.9.1
 	github.com/emersion/go-textwrapper v0.0.0-20160606182133-d0e65e56babe // indirect
 	github.com/katzenpost/authority v0.0.8
-	github.com/katzenpost/core v0.0.7
+	github.com/katzenpost/core v0.0.8-0.20191117121951-d5cf686c5a78
 	github.com/katzenpost/mailproxy v0.0.6
 	github.com/katzenpost/minclient v0.0.5
-	github.com/katzenpost/noise v0.0.0-20190323135632-a6bec72d870a
+	github.com/katzenpost/noise v0.0.0-20190907181756-73de63f19ada
 	github.com/katzenpost/playground v0.0.4
 	github.com/katzenpost/registration_client v0.0.1
 	github.com/katzenpost/server v0.0.7 // indirect

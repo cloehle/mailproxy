@@ -23,9 +23,11 @@ import (
 	"github.com/katzenpost/core/worker"
 	"gopkg.in/op/go-logging.v1"
     "github.com/cloehle/xmppproxy/xmppserver"
-    "github.com/cloehle/xmppproxy/internal/xmpp"
 
     "sync"
+	"fmt"
+	"encoding/xml"
+	"strings"
     //SMTP:
     "github.com/cloehle/xmppproxy/internal/account"
     "github.com/cloehle/xmppproxy/internal/imf"
@@ -48,8 +50,6 @@ func (l *xmppListener) Halt() {
 	// Close the listener and wait for the worker(s) to return.
 	l.l.Close()
 	l.Worker.Halt()
-
-	// TODO: Force close all XMPP sessions somehow.
 }
 
 func (l *xmppListener) worker() {
@@ -99,7 +99,7 @@ func newXMPPListener(p *Proxy) (*xmppListener, error) {
     */
 	// restore from saved contact state
 
-	am := xmpp.AccountManager{Online: contacts, OnlineLock: &sync.Mutex{}}
+	am := AccountManager{Online: contacts, OnlineLock: &sync.Mutex{}, Proxy: p}
 
 	l.server = xmppserver.Server{
 		Accounts:   am,
@@ -108,7 +108,7 @@ func newXMPPListener(p *Proxy) (*xmppListener, error) {
 			&xmppserver.NormalMessageExtension{MessageBus: messagebus},
 			&xmppserver.RosterExtension{Accounts: am},
 			&GlueExtension{},
-			&xmpp.RosterManagementExtension{Accounts: am},
+			&RosterManagementExtension{Accounts: am},
 		},
 		DisconnectBus: disconnectbus,
 		Domain:        "localhost",
@@ -260,6 +260,164 @@ func newEventListener(p *Proxy) *eventListener {
 	l.Go(l.worker)
 	return l
 }
+
+
+// AccountManager deals with understanding the local set of talek logs in use and remote users
+type AccountManager struct {
+	Online  map[string]chan<- []byte
+	OnlineLock    *sync.Mutex
+	Proxy *Proxy
+	log *logging.Logger
+}
+
+// Authenticate is called when local user attempts to authenticate
+func (a AccountManager) Authenticate(username, password string) (success bool, err error) {
+	success = true
+	return
+}
+
+// CreateAccount is called when local user attempts to register
+func (a AccountManager) CreateAccount(username, password string) (success bool, err error) {
+	success = true
+	//TODO: XMPPProxy generate and register account @ provider
+	return
+}
+
+// OnlineRoster is called periodically by client
+func (a AccountManager) OnlineRoster(jid string) (online []string, err error) {
+	a.OnlineLock.Lock()
+	defer a.OnlineLock.Unlock()
+
+	// For status
+	online = append(online, "status")
+	for person := range a.Online {
+		online = append(online, person)
+	}
+	return
+}
+
+// msg from local user
+func (a AccountManager) RouteRoutine(bus <-chan xmppserver.Message) {
+	var channel chan<- []byte
+	var ok bool
+
+	for {
+		message := <-bus
+		a.OnlineLock.Lock()
+
+		fmt.Printf("%s -> %s\n", message.To, message.Data)
+		if channel, ok = a.Online[message.To]; ok {
+			switch message.Data.(type) {
+			case []byte:
+				channel <- message.Data.([]byte)
+			default:
+				data, err := xml.Marshal(message.Data)
+				if err != nil {
+					panic(err)
+				}
+				channel <- data
+			}
+		} else {
+			panic("Receiving user not in Roster")
+		}
+
+		a.OnlineLock.Unlock()
+	}
+}
+
+// Local user online
+// xmppserver is written in a way that this is run for every user
+// but we should only ever have that for loop run once
+func (a AccountManager) ConnectRoutine(bus <-chan xmppserver.Connect) {
+	for {
+		message := <-bus
+		a.OnlineLock.Lock()
+		localPart := strings.SplitN(message.Jid, "@", 2)
+		fmt.Printf("Adding %s to roster\n", localPart)
+		a.Online[localPart[0]] = message.Receiver
+		a.OnlineLock.Unlock()
+	}
+}
+
+// Local user offline
+func (a AccountManager) DisconnectRoutine(bus <-chan xmppserver.Disconnect) {
+	for {
+		message := <-bus
+		a.OnlineLock.Lock()
+		localPart := strings.SplitN(message.Jid, "@", 2)
+		delete(a.Online, localPart[0])
+		a.OnlineLock.Unlock()
+	}
+}
+
+/*
+//What is this even? not called anywere?
+func handleMessagesTo(jid string) chan interface{} {
+	iface := make(chan interface{})
+	go func() {
+		for {
+			n := <-iface
+			fmt.Printf("Msg To %s: %s\n", jid, n)
+		}
+	}()
+	return iface
+}
+*/
+
+// RosterManagementExtension watches for messages outbound from client.
+type RosterManagementExtension struct {
+	Accounts AccountManager
+}
+
+// Process takes in messages (presence stanzas) from the xmpp client
+// subscribe = contact addition, presence notifications
+func (e *RosterManagementExtension) Process(message interface{}, from *xmppserver.Client) {
+	parsedPresence, ok := message.(*xmppserver.ClientPresence)
+	if ok && parsedPresence.Type != "subscribe" {
+		fmt.Printf("Saw client presence: %v\n", parsedPresence)
+	    // I would ignore status anyway, so simply drop any presence stanzas
+		/*from.Send([]byte("<presence from='status@katzenpost'><priority>1</priority></presence>"))
+		for person := range e.Accounts.Online {
+			from.Send([]byte("<presence from='" + person + "@katzenpost/xmpp' to='" + from.Jid() + "' />"))
+		}*/
+	} else if ok {
+		fmt.Printf("Subscribing to: %v\n", parsedPresence.To)
+		rcpt, err := e.Accounts.Proxy.toAccountRecipient(parsedPresence.To)
+		if err != nil {
+			e.Accounts.log.Warningf("Invalid Subscribe argument");
+			return
+		}
+		//TODO: Parse From to get account? mailproxy was designed to be used by multiple accounts
+		// If automatic key discovery is enabled for this account, continue
+		// TODO:
+		/*if rcpt.PublicKey == nil && !e.Accounts.Proxy.getAccount(parsedPresence.From).InsecureKeyDiscovery {
+			e.Accounts.log.Warningf("Recipient ('%v') is not known and Insecure Key Discovery is disabled")
+			return
+		}*/
+
+		//TODO: Contact addition: Key Discovery
+		//QueryKeyFromProvider
+		
+		// So for sending we will probably use a seperate worker that queues it,
+		// Problem: how to notify about successful sending in xmpp real-time manner?
+
+		/*contact, offer := GetOffer("nickname", parsedPresence.To)
+		contact.Start(e.Client)
+		sender := func(msg []byte) {
+			wrapped := fmt.Sprintf("<message from='%s@talexmpp/talek' type='chat'><body>%s</body></message>", parsedPresence.To, msg)
+			from.Send([]byte(wrapped))
+		}
+		fromUser := contact.Channel(&sender)
+		e.Accounts.Online[parsedPresence.To] = fromUser
+		from.Send([]byte("<message from='status@talexmpp' type='chat'><body>Contact generated. Offer:\n" + string(offer) + "</body></message>"))
+        */
+	}
+
+	//parsedMessage, ok := message.(*xmppserver.ClientMessage)
+}
+
+
+
 /*
 func newSMTPListener(p *Proxy) (*smtpListener, error) {
 	l := new(smtpListener)

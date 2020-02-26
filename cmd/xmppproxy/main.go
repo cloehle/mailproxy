@@ -27,8 +27,8 @@ import (
 	"syscall"
 
 	"github.com/katzenpost/core/utils"
-	"github.com/katzenpost/xmppproxy"
-	"github.com/katzenpost/xmppproxy/config"
+	"github.com/cloehle/xmppproxy"
+	"github.com/cloehle/xmppproxy/config"
 	"github.com/katzenpost/playground"
 	"github.com/katzenpost/registration_client"
 	rclient "github.com/katzenpost/registration_client/mailproxy"
