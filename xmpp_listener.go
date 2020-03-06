@@ -92,13 +92,9 @@ func newXMPPListener(p *Proxy) (*xmppListener, error) {
 	var connectbus = make(chan xmppserver.Connect)
 	var disconnectbus = make(chan xmppserver.Disconnect)
 
-    /*
-	leader := talekcommon.NewFrontendRPC("rpc", talekconf.FrontendAddr)
-	backend := libtalek.NewClient("talexmpp", *talekconf, leader)
-    */
 	// restore from saved contact state
 
-	am := AccountManager{Online: []string{}, OnlineLock: &sync.Mutex{}, Proxy: p, AlreadyOnline: false}
+	am := AccountManager{Online: []string{}, OnlineLock: &sync.Mutex{}, Proxy: p}
 
 	l.server = xmppserver.Server{
 		Accounts:   am,
@@ -337,9 +333,7 @@ func (a AccountManager) RouteRoutine(bus <-chan xmppserver.Message) {
 			if _, err := account.EnqueueMessage(recipient, data, false); err != nil {
 				//TODO: false was isUnreliable, check for problems later on
 				a.log.Errorf("Failed to enqueue for '%v': %v", recipient, err)
-			} //else {
-				//panic("Receiving user not in Roster")
-			//}
+			}
 		a.OnlineLock.Unlock()
 	}
 }
@@ -412,28 +406,40 @@ func (e *RosterManagementExtension) Process(message interface{}, from *xmppserve
 		}*/
 	} else if ok {
 		fmt.Printf("Subscribing to: %v\n", parsedPresence.To)
-		rcpt, err := e.Accounts.Proxy.toAccountRecipient(parsedPresence.To)
+		recipient, err := e.Accounts.Proxy.toAccountRecipient(parsedPresence.To)
 		if err != nil {
 			e.Accounts.log.Warningf("Invalid Subscribe argument");
 			return
 		}
-		fmt.Printf("Recipient: %s", rcpt)
-		//TODO: Parse From to get account? mailproxy was designed to be used by multiple accounts
-		// If automatic key discovery is enabled for this account, continue
 		// TODO:
 		/*if rcpt.PublicKey == nil && !e.Accounts.Proxy.getAccount(parsedPresence.From).InsecureKeyDiscovery {
 			e.Accounts.log.Warningf("Recipient ('%v') is not known and Insecure Key Discovery is disabled")
 			return
 		}*/
 
-		//TODO: Contact addition: Key Discovery
-		//QueryKeyFromProvider
-		
-		// So for sending we will probably use a seperate worker that queues it,
-		// Problem: how to notify about successful sending in xmpp real-time manner?
-
-		/*contact, offer := GetOffer("nickname", parsedPresence.To)
-		contact.Start(e.Client)
+		account, accountID, err := e.Accounts.Proxy.getAccount(e.Accounts.Jid)
+		if recipient.PublicKey == nil {
+			msgID, err := e.Accounts.Proxy.QueryKeyFromProvider(accountID, recipient.ID)
+			if err != nil {
+				e.Accounts.log.Warningf("Failed to query key for '%v': ", recipient.ID, err)
+			}
+			e.Accounts.log.Infof("Key Query sent with message id %v", msgID)
+			e.Accounts.log.Infof("We should send from account %v now", account)
+			// defer this message to be sent later
+			// This is only relevant if we want actual subscription
+			//expire := time.Now().Add(time.Duration(e.Accounts.Proxy.cfg.Debug.UrgentQueueLifetime) * time.Second)
+			// nil here was entity, this needs adaption to xmpp instead of imf anyway
+			//e.Accounts.Proxy.eventListener.enqueueLaterCh <- &enqueueLater{string(msgID), accountID, recipient.ID, &payload, nil, false, expire}
+		} else {
+			// TODO: some sort of actual subscription mechanism?
+			/*if _, err = account.EnqueueMessage(recipient, payload, false); err != nil {
+				e.Accounts.log.Errorf("Failed to enqueue for '%v': %v", recipient, err)
+			}*/
+		}
+		e.Accounts.OnlineLock.Lock()
+		e.Accounts.Online = append(e.Accounts.Online, parsedPresence.To)
+		e.Accounts.OnlineLock.Unlock()
+		/*
 		sender := func(msg []byte) {
 			wrapped := fmt.Sprintf("<message from='%s@talexmpp/talek' type='chat'><body>%s</body></message>", parsedPresence.To, msg)
 			from.Send([]byte(wrapped))
