@@ -88,7 +88,6 @@ func newXMPPListener(p *Proxy) (*xmppListener, error) {
 		return nil, err
 	}
 
-	var contacts = make(map[string]chan<- []byte)
 	var messagebus = make(chan xmppserver.Message)
 	var connectbus = make(chan xmppserver.Connect)
 	var disconnectbus = make(chan xmppserver.Disconnect)
@@ -99,7 +98,7 @@ func newXMPPListener(p *Proxy) (*xmppListener, error) {
     */
 	// restore from saved contact state
 
-	am := AccountManager{Online: contacts, OnlineLock: &sync.Mutex{}, Proxy: p}
+	am := AccountManager{Online: []string{}, OnlineLock: &sync.Mutex{}, Proxy: p, AlreadyOnline: false}
 
 	l.server = xmppserver.Server{
 		Accounts:   am,
@@ -264,8 +263,15 @@ func newEventListener(p *Proxy) *eventListener {
 
 // AccountManager deals with understanding the local set of talek logs in use and remote users
 type AccountManager struct {
-	Online  map[string]chan<- []byte
+	Online []string
+	//Online  map[string]*ecdh.PublicKey
+	//replace with p.recipients (store)
 	OnlineLock    *sync.Mutex
+	//Currently this ensures that only one client is active per xmppserver
+	//There may be future use-cases to enable multiple clients though
+	AlreadyOnline bool
+	Jid string
+	Loopreceiver chan<- []byte
 	Proxy *Proxy
 	log *logging.Logger
 }
@@ -289,38 +295,51 @@ func (a AccountManager) OnlineRoster(jid string) (online []string, err error) {
 	defer a.OnlineLock.Unlock()
 
 	// For status
-	online = append(online, "status")
+	/*online = append(online, "status")
 	for person := range a.Online {
 		online = append(online, person)
-	}
+	}*/
+	//Is this bad because xmppserver modifies it?
+	online = a.Online
 	return
 }
 
 // msg from local user
+// enqueue message here
 func (a AccountManager) RouteRoutine(bus <-chan xmppserver.Message) {
-	var channel chan<- []byte
-	var ok bool
-
 	for {
 		message := <-bus
+		var data []byte
 		a.OnlineLock.Lock()
 
 		fmt.Printf("%s -> %s\n", message.To, message.Data)
-		if channel, ok = a.Online[message.To]; ok {
+		//if ok = a.Online[message.To]; ok {
 			switch message.Data.(type) {
 			case []byte:
-				channel <- message.Data.([]byte)
+				data = message.Data.([]byte)
 			default:
-				data, err := xml.Marshal(message.Data)
+				var err error
+				data, err = xml.Marshal(message.Data)
 				if err != nil {
 					panic(err)
 				}
-				channel <- data
 			}
-		} else {
-			panic("Receiving user not in Roster")
-		}
-
+			account, accountID, err := a.Proxy.getAccount(a.Jid)
+			if err != nil {
+				a.log.Errorf("No account matching %s", a.Jid)
+				panic("No matching account to send from")
+			}
+			recipient, err := a.Proxy.toAccountRecipient(message.To)
+			if err != nil {
+				a.log.Errorf("No recipient found for %s using accountID %v", message.To, accountID)
+				panic("No matching recipient")
+			}
+			if _, err := account.EnqueueMessage(recipient, data, false); err != nil {
+				//TODO: false was isUnreliable, check for problems later on
+				a.log.Errorf("Failed to enqueue for '%v': %v", recipient, err)
+			} //else {
+				//panic("Receiving user not in Roster")
+			//}
 		a.OnlineLock.Unlock()
 	}
 }
@@ -328,13 +347,22 @@ func (a AccountManager) RouteRoutine(bus <-chan xmppserver.Message) {
 // Local user online
 // xmppserver is written in a way that this is run for every user
 // but we should only ever have that for loop run once
+// TODO: add all recipients in keystore to online roster
 func (a AccountManager) ConnectRoutine(bus <-chan xmppserver.Connect) {
 	for {
+		if(a.AlreadyOnline) {
+			panic("Multiple Users connected to XMPP Server")
+		}
+		a.AlreadyOnline = true
 		message := <-bus
 		a.OnlineLock.Lock()
+		if a.Jid != "" && a.Jid != message.Jid {
+			panic("Multiple JIDs not supported")
+		}
+		a.Jid = message.Jid
 		localPart := strings.SplitN(message.Jid, "@", 2)
 		fmt.Printf("Adding %s to roster\n", localPart)
-		a.Online[localPart[0]] = message.Receiver
+		a.Loopreceiver = message.Receiver
 		a.OnlineLock.Unlock()
 	}
 }
@@ -343,10 +371,12 @@ func (a AccountManager) ConnectRoutine(bus <-chan xmppserver.Connect) {
 func (a AccountManager) DisconnectRoutine(bus <-chan xmppserver.Disconnect) {
 	for {
 		message := <-bus
-		a.OnlineLock.Lock()
-		localPart := strings.SplitN(message.Jid, "@", 2)
-		delete(a.Online, localPart[0])
-		a.OnlineLock.Unlock()
+		a.log.Infof("Disconnect: %s", message)
+		//a.OnlineLock.Lock()
+		//localPart := strings.SplitN(message.Jid, "@", 2)
+		//delete(a.Online, localPart[0]) //TODO: Why would this be useful anyway?
+		//a.OnlineLock.Unlock()
+		//a.AlreadyOnline = false
 	}
 }
 
@@ -387,6 +417,7 @@ func (e *RosterManagementExtension) Process(message interface{}, from *xmppserve
 			e.Accounts.log.Warningf("Invalid Subscribe argument");
 			return
 		}
+		fmt.Printf("Recipient: %s", rcpt)
 		//TODO: Parse From to get account? mailproxy was designed to be used by multiple accounts
 		// If automatic key discovery is enabled for this account, continue
 		// TODO:
@@ -415,8 +446,6 @@ func (e *RosterManagementExtension) Process(message interface{}, from *xmppserve
 
 	//parsedMessage, ok := message.(*xmppserver.ClientMessage)
 }
-
-
 
 /*
 func newSMTPListener(p *Proxy) (*smtpListener, error) {
