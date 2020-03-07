@@ -43,6 +43,7 @@ type xmppListener struct {
 
 	p   *Proxy
 	l   net.Listener
+	a	AccountManager
 	log *logging.Logger
 }
 
@@ -94,25 +95,25 @@ func newXMPPListener(p *Proxy) (*xmppListener, error) {
 
 	// restore from saved contact state
 
-	am := AccountManager{Online: []string{}, OnlineLock: &sync.Mutex{}, Proxy: p}
+	l.a = AccountManager{Online: []string{}, OnlineLock: &sync.Mutex{}, Proxy: p}
 
 	l.server = xmppserver.Server{
-		Accounts:   am,
+		Accounts:   l.a,
 		ConnectBus: connectbus,
 		Extensions: []xmppserver.Extension{
 			&xmppserver.NormalMessageExtension{MessageBus: messagebus},
-			&xmppserver.RosterExtension{Accounts: am},
+			&xmppserver.RosterExtension{Accounts: l.a},
 			&GlueExtension{},
-			&RosterManagementExtension{Accounts: am},
+			&RosterManagementExtension{Accounts: l.a},
 		},
 		DisconnectBus: disconnectbus,
 		Domain:        "localhost",
 		SkipTLS:     true,
 	}
 
-	go am.RouteRoutine(messagebus)
-	go am.ConnectRoutine(connectbus)
-	go am.DisconnectRoutine(disconnectbus)
+	go l.a.RouteRoutine(messagebus)
+	go l.a.ConnectRoutine(connectbus)
+	go l.a.DisconnectRoutine(disconnectbus)
 
 	l.Go(l.worker)
 	return l, nil
@@ -202,6 +203,23 @@ func (l *eventListener) onKaetzchenReply(e *event.KaetzchenReplyEvent) {
 	}
 }
 
+func (l *eventListener) onMessageReceived(e *event.MessageReceivedEvent) {
+	// e contains the msg id
+	// theoretically we would like the message belonging to that id
+	// but api only provides ReceivePop, which always returns
+	// eldest message
+	// Although it seems counter-intuitive to not request that
+	// specific message that fired the event, it should still work as intended
+	// (or even better, as we ideally want the eldest message anyway)
+	message, err := l.p.ReceivePop(e.AccountID)
+	if err != nil {
+		l.log.Warningf("ReceivePop() failed for %v", e.AccountID)
+		return
+	}
+	wrapped := fmt.Sprintf("<message from='%s@katzenpost/xmpp' type='chat'><body>%s</body></message>", message.SenderID, message.Payload)
+	l.p.xmppListener.a.Loopreceiver <- []byte(wrapped)
+}
+
 func (l *eventListener) prune(t time.Time) {
 	toDel := make([]string, 0)
 	for k, r := range l.sendLater {
@@ -241,7 +259,9 @@ func (l *eventListener) worker() {
 			switch e := evt.(type) {
 			case *event.KaetzchenReplyEvent:
 				l.onKaetzchenReply(e)
-			default:
+			case *event.MessageReceivedEvent:
+				l.onMessageReceived(e) //TODO: give this to xmpp channel
+			default: //TODO: else what?
 			}
 		}
 	}
@@ -260,12 +280,9 @@ func newEventListener(p *Proxy) *eventListener {
 // AccountManager deals with understanding the local set of talek logs in use and remote users
 type AccountManager struct {
 	Online []string
-	//Online  map[string]*ecdh.PublicKey
-	//replace with p.recipients (store)
 	OnlineLock    *sync.Mutex
-	//Currently this ensures that only one client is active per xmppserver
-	//There may be future use-cases to enable multiple clients though
-	AlreadyOnline bool
+	// Jid and Loopreceiver have to be modified accordingly if we want xmppserver
+	// to support multiple local clients
 	Jid string
 	Loopreceiver chan<- []byte
 	Proxy *Proxy
@@ -344,10 +361,6 @@ func (a AccountManager) RouteRoutine(bus <-chan xmppserver.Message) {
 // TODO: add all recipients in keystore to online roster
 func (a AccountManager) ConnectRoutine(bus <-chan xmppserver.Connect) {
 	for {
-		if(a.AlreadyOnline) {
-			panic("Multiple Users connected to XMPP Server")
-		}
-		a.AlreadyOnline = true
 		message := <-bus
 		a.OnlineLock.Lock()
 		if a.Jid != "" && a.Jid != message.Jid {
