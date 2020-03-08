@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"log"
+	"fmt"
 	"strings"
 )
 
@@ -13,20 +14,28 @@ type State interface {
 }
 
 // NewTLSStateMachine return steps through TCP TLS state
-func NewTLSStateMachine() State {
+func NewTLSStateMachine(skipTLS bool) State {
 	normal := &Normal{}
+	if skipTLS {
+		authedstream := &AuthedStream{Next: normal}
+		authedstart := &AuthedStart{Next: authedstream}
+		auth := &Auth{Next: authedstart}
+		start := &Start{Next: auth, SkipTLS: true}
+		return start
+	}
 	authedstream := &AuthedStream{Next: normal}
 	authedstart := &AuthedStart{Next: authedstream}
-	tlsauth := &TLSAuth{Next: authedstart}
+	tlsauth := &Auth{Next: authedstart}
 	tlsstartstream := &TLSStartStream{Next: tlsauth}
 	tlsupgrade := &TLSUpgrade{Next: tlsstartstream}
 	firststream := &TLSUpgradeRequest{Next: tlsupgrade}
-	start := &Start{Next: firststream}
+	start := &Start{Next: firststream, SkipTLS: false}
 	return start
 }
 
 // Start state
 type Start struct {
+	SkipTLS bool
 	Next State
 }
 
@@ -38,6 +47,10 @@ func (state *Start) Process(c *Connection, client *Client, s *Server) (State, *C
 	}
 	// TODO: check that se is a stream
 	c.SendRawf("<?xml version='1.0'?><stream:stream id='%x' version='1.0' xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams'>", createCookie())
+	if state.SkipTLS {
+		c.SendRaw([]byte("<stream:features><mechanisms xmlns='urn:ietf:params:xml:ns:xmpp-sasl'><mechanism>PLAIN</mechanism></mechanisms></stream:features>"))
+		return state.Next, c, nil
+	}
 	c.SendRaw([]byte("<stream:features><starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'><required/></starttls></stream:features>"))
 	return state.Next, c, nil
 }
@@ -93,13 +106,13 @@ func (state *TLSStartStream) Process(c *Connection, client *Client, s *Server) (
 	return state.Next, c, nil
 }
 
-// TLSAuth state
-type TLSAuth struct {
+// Auth state
+type Auth struct {
 	Next State
 }
 
 // Process messages
-func (state *TLSAuth) Process(c *Connection, client *Client, s *Server) (State, *Connection, error) {
+func (state *Auth) Process(c *Connection, client *Client, s *Server) (State, *Connection, error) {
 	se, err := c.Next()
 	if err != nil {
 		return nil, c, err
@@ -187,7 +200,7 @@ func (state *AuthedStream) Process(c *Connection, client *Client, s *Server) (St
 
 		s.ConnectBus <- Connect{Jid: client.jid, Receiver: client.messages}
 	default:
-		log.Printf("Expected ClientIQ message")
+		fmt.Printf("Expected ClientIQ message\n")
 		return nil, c, err
 	}
 	return state.Next, c, nil
@@ -211,10 +224,11 @@ func (state *Normal) Process(c *Connection, client *Client, s *Server) (State, *
 				done <- true
 				return
 			}
-			_, val, _ := c.Read(se)
-
-			for _, extension := range s.Extensions {
-				extension.Process(val, client)
+			_, val, readerr := c.Read(se)
+			if val != nil {
+				for _, extension := range s.Extensions {
+					extension.Process(val, client)
+				}
 			}
 		}
 	}(readDone, errors)
@@ -230,7 +244,7 @@ func (state *Normal) Process(c *Connection, client *Client, s *Server) (State, *
 		case <-readDone:
 			return nil, c, nil
 		case err := <-errors:
-			log.Printf("Connection Error: %s", err.Error())
+			fmt.Printf("Connection Error: %s\n", err.Error())
 		}
 	}
 }

@@ -2,7 +2,7 @@ package xmppserver
 
 import (
 	"fmt"
-	"log"
+	//"log"
 	"strings"
 )
 
@@ -17,7 +17,7 @@ type DebugExtension struct {
 
 // Process a message (write to debug logger)
 func (e *DebugExtension) Process(message interface{}, from *Client) {
-	log.Printf("Processing message: %s", message)
+	fmt.Printf("Processing message: %s\n", message)
 }
 
 // NormalMessageExtension handles client messages

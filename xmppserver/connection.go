@@ -57,7 +57,6 @@ func (c *Connection) Read(se xml.StartElement) (xml.Name, interface{}, error) {
 	if err := c.in.DecodeElement(messageInterface, &se); err != nil {
 		return xml.Name{}, nil, err
 	}
-
 	return se.Name, messageInterface, nil
 }
 

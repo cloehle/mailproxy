@@ -8,8 +8,8 @@ package xmppserver
 
 import (
 	"crypto/tls"
-	"log"
 	"net"
+	"gopkg.in/op/go-logging.v1"
 )
 
 // Client xmpp connection
@@ -63,6 +63,9 @@ type Server struct {
 
 	// notify server that the client has disconnected
 	DisconnectBus chan<- Disconnect
+
+	// Logger if the xmppserver isn't standalone
+	Log *logging.Logger
 }
 
 // Message is a generic XMPP message to send to the To Jid
@@ -87,9 +90,9 @@ func (s *Server) TCPAnswer(conn net.Conn) {
 	defer conn.Close()
 	var err error
 
-	log.Printf("Accepting TCP connection from: %s", conn.RemoteAddr())
+	s.Log.Infof("Accepting TCP connection from: %s", conn.RemoteAddr())
 
-	state := NewTLSStateMachine()
+	state := NewTLSStateMachine(s.SkipTLS)
 	client := &Client{messages: make(chan []byte)}
 	defer close(client.messages)
 
@@ -97,14 +100,14 @@ func (s *Server) TCPAnswer(conn net.Conn) {
 
 	for {
 		state, clientConnection, err = state.Process(clientConnection, client, s)
-		//s.Log.Debug(fmt.Sprintf("[state] %s", state))
+		s.Log.Debugf("[state] %s", state)
 
 		if err != nil {
-			log.Printf("[%s] State Error: %s", client.jid, err.Error())
+			s.Log.Errorf("[%s] State Error: %s", client.jid, err.Error())
 			return
 		}
 		if state == nil {
-			log.Printf("Client Disconnected: %s", client.jid)
+			s.Log.Infof("Client Disconnected: %s", client.jid)
 			s.DisconnectBus <- Disconnect{Jid: client.jid}
 			return
 		}
