@@ -95,13 +95,22 @@ func newXMPPListener(p *Proxy) (*xmppListener, error) {
 
 	// restore from saved contact state
 
-	l.a = AccountManager{Online: []string{}, OnlineLock: &sync.Mutex{}, Proxy: p}
+	//TODO: If multiple accounts can be used, modify accordingly
+	accountnames := l.p.accounts.ListIDs()
+	if len(accountnames) != 1 {
+		l.log.Errorf("Accountstore has not exactly one account")
+		return nil, err
+	}
+
+	l.a = AccountManager{Online: []string{}, OnlineLock: &sync.Mutex{}, Proxy: p,
+	Accountname: accountnames[0], log: p.logBackend.GetLogger("listener/AccountManager")}
 
 	l.server = xmppserver.Server{
 		Accounts:   l.a,
 		ConnectBus: connectbus,
 		Extensions: []xmppserver.Extension{
 			&xmppserver.NormalMessageExtension{MessageBus: messagebus},
+			&xmppserver.DebugExtension{},
 			&xmppserver.RosterExtension{Accounts: l.a},
 			&GlueExtension{},
 			&RosterManagementExtension{Accounts: l.a},
@@ -109,6 +118,7 @@ func newXMPPListener(p *Proxy) (*xmppListener, error) {
 		DisconnectBus: disconnectbus,
 		Domain:        "localhost",
 		SkipTLS:     true,
+		Log:	l.log,
 	}
 
 	go l.a.RouteRoutine(messagebus)
@@ -151,6 +161,7 @@ type eventListener struct {
 }
 
 func (l *eventListener) onKaetzchenReply(e *event.KaetzchenReplyEvent) {
+	l.log.Debugf("KaetzchenReplyEvent received: %v", e)
 	id := string(e.MessageID)
 	r, ok := l.sendLater[id]
 	if !ok {
@@ -283,9 +294,9 @@ type AccountManager struct {
 	OnlineLock    *sync.Mutex
 	// Jid and Loopreceiver have to be modified accordingly if we want xmppserver
 	// to support multiple local clients
-	Jid string
 	Loopreceiver chan<- []byte
 	Proxy *Proxy
+	Accountname string
 	log *logging.Logger
 }
 
@@ -312,7 +323,7 @@ func (a AccountManager) OnlineRoster(jid string) (online []string, err error) {
 	for person := range a.Online {
 		online = append(online, person)
 	}*/
-	//Is this bad because xmppserver modifies it?
+	// TODO: Is this bad because xmppserver modifies it?
 	online = a.Online
 	return
 }
@@ -325,7 +336,7 @@ func (a AccountManager) RouteRoutine(bus <-chan xmppserver.Message) {
 		var data []byte
 		a.OnlineLock.Lock()
 
-		fmt.Printf("%s -> %s\n", message.To, message.Data)
+		a.log.Infof("Routing Message: %s -> %s", message.To, message.Data)
 		//if ok = a.Online[message.To]; ok {
 			switch message.Data.(type) {
 			case []byte:
@@ -337,9 +348,9 @@ func (a AccountManager) RouteRoutine(bus <-chan xmppserver.Message) {
 					panic(err)
 				}
 			}
-			account, accountID, err := a.Proxy.getAccount(a.Jid)
+			account, accountID, err := a.Proxy.getAccount(a.Accountname)
 			if err != nil {
-				a.log.Errorf("No account matching %s", a.Jid)
+				a.log.Errorf("No account matching %s", a.Accountname)
 				panic("No matching account to send from")
 			}
 			recipient, err := a.Proxy.toAccountRecipient(message.To)
@@ -363,12 +374,8 @@ func (a AccountManager) ConnectRoutine(bus <-chan xmppserver.Connect) {
 	for {
 		message := <-bus
 		a.OnlineLock.Lock()
-		if a.Jid != "" && a.Jid != message.Jid {
-			panic("Multiple JIDs not supported")
-		}
-		a.Jid = message.Jid
 		localPart := strings.SplitN(message.Jid, "@", 2)
-		fmt.Printf("Adding %s to roster\n", localPart)
+		a.log.Infof("Adding %s to roster", localPart)
 		a.Loopreceiver = message.Receiver
 		a.OnlineLock.Unlock()
 	}
@@ -411,17 +418,17 @@ type RosterManagementExtension struct {
 func (e *RosterManagementExtension) Process(message interface{}, from *xmppserver.Client) {
 	parsedPresence, ok := message.(*xmppserver.ClientPresence)
 	if ok && parsedPresence.Type != "subscribe" {
-		fmt.Printf("Saw client presence: %v\n", parsedPresence)
+		e.Accounts.log.Debugf("Saw client presence, server ignores this")
 	    // I would ignore status anyway, so simply drop any presence stanzas
 		/*from.Send([]byte("<presence from='status@katzenpost'><priority>1</priority></presence>"))
 		for person := range e.Accounts.Online {
 			from.Send([]byte("<presence from='" + person + "@katzenpost/xmpp' to='" + from.Jid() + "' />"))
 		}*/
 	} else if ok {
-		fmt.Printf("Subscribing to: %v\n", parsedPresence.To)
+		e.Accounts.log.Infof("Subscribing to: %v\n", parsedPresence.To)
 		recipient, err := e.Accounts.Proxy.toAccountRecipient(parsedPresence.To)
 		if err != nil {
-			e.Accounts.log.Warningf("Invalid Subscribe argument");
+			e.Accounts.log.Warningf("Invalid Subscribe argument", err);
 			return
 		}
 		// TODO:
@@ -430,7 +437,11 @@ func (e *RosterManagementExtension) Process(message interface{}, from *xmppserve
 			return
 		}*/
 
-		account, accountID, err := e.Accounts.Proxy.getAccount(e.Accounts.Jid)
+		account, accountID, err := e.Accounts.Proxy.getAccount(e.Accounts.Accountname)
+		if err != nil {
+			e.Accounts.log.Errorf("Could not find matching account for %s", e.Accounts.Accountname, err);
+			return
+		}
 		if recipient.PublicKey == nil {
 			msgID, err := e.Accounts.Proxy.QueryKeyFromProvider(accountID, recipient.ID)
 			if err != nil {

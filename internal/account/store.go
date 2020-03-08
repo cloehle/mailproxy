@@ -85,6 +85,14 @@ func (s *Store) Get(id string) (*Account, error) {
 	return nil, errNoSuchAccount
 }
 
+func (s *Store) ListIDs() ([]string) {
+	accounts := []string{}
+	for id, _ := range s.accounts {
+		accounts = append(accounts, id)
+	}
+	return accounts
+}
+
 /*
 // NewSession creates a new pop3.BackendSession backed by the specified user,
 // where the user is of the form `user@provider`.
