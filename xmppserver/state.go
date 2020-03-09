@@ -236,10 +236,12 @@ func (state *Normal) Process(c *Connection, client *Client, s *Server) (State, *
 	for {
 		select {
 		case msg := <-client.messages:
+
 			err = c.SendRaw(msg)
 
 			if err != nil {
 				errors <- err
+				fmt.Printf("Sending error: %s\n", err.Error())
 			}
 		case <-readDone:
 			return nil, c, nil
