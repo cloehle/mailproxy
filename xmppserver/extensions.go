@@ -51,7 +51,11 @@ func (e *RosterExtension) Process(message interface{}, from *Client) {
 		roster, _ := e.Accounts.OnlineRoster(from.jid)
 		msg := "<iq id='" + parsed.ID + "' to='" + from.jid + "' type='result'><query xmlns='jabber:iq:roster' ver='ver7'>"
 		for _, v := range roster {
-			msg = msg + "<item jid='" + v + "@katzenpost' name='" + v + "'/>"
+			// v needs '@' and domainpart added, but katzenpost xmppproxy has this
+			// already in roster
+			// original example line:
+			// msg = msg + "<item jid='" + v + "@katzenpost' name='" + v + "'/>"
+			msg = msg + "<item jid='" + v + "'/>"
 		}
 		msg = msg + "</query></iq>"
 

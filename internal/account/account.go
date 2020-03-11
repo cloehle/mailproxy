@@ -67,6 +67,7 @@ type Account struct {
 	isConnected bool
 	refCount    int32
 	InsecureKeyDiscovery bool
+	UseIMF bool
 }
 
 // Deref decrements the reference count of the Account.  If the reference count
@@ -228,6 +229,7 @@ func (a *Account) IsConnected() bool {
 	return a.isConnected
 }
 
+//TODO: useIMF is for xmppproxy only, which should be determined by config not passed
 func (s *Store) newAccount(id string, cfg *config.Account, pCfg *proxy.Config) (*Account, error) {
 	a := new(Account)
 	a.s = s
@@ -286,6 +288,11 @@ func (s *Store) newAccount(id string, cfg *config.Account, pCfg *proxy.Config) (
 
 	// Configure InsecureKeyDiscovery
 	a.InsecureKeyDiscovery = cfg.InsecureKeyDiscovery
+
+	//TODO: This obviously needs more work if we want to use mailproxys codebase
+	// at all
+	// if not useIMF is useless, as all IMF should be removed entirely
+	a.UseIMF = false
 
 	var err error
 	a.nonvotingAuthority, err = s.authorities.Get(cfg.NonvotingAuthority)

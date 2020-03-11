@@ -335,6 +335,11 @@ func (a *Account) storeRecvMessage(recvBkt *bolt.Bucket, id, payload []byte) {
 
 	a.log.Debugf("Message %v Payload: %v", idStr, hex.Dump(payload))
 
+	if !a.UseIMF {
+		a.log.Debugf("Message %v ToStore: %v", idStr, hex.Dump(payload))
+		a.storeMessage(recvBkt, sender, payload)
+		return
+	}
 	// Validate that the message is well formed IMF.
 	msg, err := imf.BytesToEntity(payload)
 	if err != nil {

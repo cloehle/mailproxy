@@ -100,7 +100,6 @@ func (s *Server) TCPAnswer(conn net.Conn) {
 
 	for {
 		state, clientConnection, err = state.Process(clientConnection, client, s)
-		s.Log.Debugf("[state] %s", state)
 
 		if err != nil {
 			s.Log.Errorf("[%s] State Error: %s", client.jid, err.Error())

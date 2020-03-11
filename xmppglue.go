@@ -16,11 +16,11 @@ func (e *GlueExtension) Process(message interface{}, from *xmppserver.Client) {
 	parsed, ok := message.(*xmppserver.ClientIQ)
 	if ok && parsed.Type == "set" && len(parsed.Query) > 0 {
 		if strings.TrimSpace(string(parsed.Query)) == `<session xmlns="urn:ietf:params:xml:ns:xmpp-session"/>` {
-			msg := "<iq id='" + parsed.ID + "' type='result' from='127.0.0.1' />"
+			msg := "<iq id='" + parsed.ID + "' type='result' from='katzenpost'/>"
 			from.Send([]byte(msg))
 			return
 		} else if strings.Contains(string(parsed.Query), "jabber:iq:privacy") {
-			msg := "<iq id='" + parsed.ID + "' type='result' from='127.0.0.1' />"
+			msg := "<iq id='" + parsed.ID + "' type='result' from='katzenpost'/>"
 			from.Send([]byte(msg))
 			return
 		}
@@ -28,7 +28,7 @@ func (e *GlueExtension) Process(message interface{}, from *xmppserver.Client) {
 	if ok && parsed.Type == "get" && len(parsed.Query) > 0 {
 		if strings.TrimSpace(string(parsed.Query)) == `<query xmlns="http://jabber.org/protocol/disco#info"/>` {
 			fmt.Printf("Got DiscoInfo query")
-			msg := "<iq type='result' from='127.0.0.1' id='" + parsed.ID + "'>"
+			msg := "<iq type='result' from='katzenpost' id='" + parsed.ID + "'>"
 			msg = msg + "<query xmlns='http://jabber.org/protocol/disco#info'>"
 			msg = msg + "<feature var='http://jabber.org/protocol/disco#info'/>"
 			msg = msg + "</query></iq>"
@@ -44,7 +44,7 @@ func (e *GlueExtension) Process(message interface{}, from *xmppserver.Client) {
 		}
 	}
 	if ok {
-		msg := "<iq type='result' id='" + parsed.ID + "' />"
+		msg := "<iq type='result' from='katzenpost' id='" + parsed.ID + "'/>"
 		from.Send([]byte(msg))
 	}
 }

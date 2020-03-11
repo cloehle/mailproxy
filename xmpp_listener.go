@@ -49,11 +49,15 @@ type xmppListener struct {
 	// to support multiple local clients
 	Loopreceiver chan<- []byte
 	Accountname string
+	Roster []string
+	RosterLock *sync.Mutex
 }
 
 func (l *xmppListener) Halt() {
 	// Close the listener and wait for the worker(s) to return.
-	l.l.Close()
+	//xmppserver provides no way of closing client connections, so
+	// there is no graceful shutdown anyway
+	//l.l.Close()
 	l.Worker.Halt()
 }
 
@@ -97,7 +101,7 @@ func newXMPPListener(p *Proxy) (*xmppListener, error) {
 	var connectbus = make(chan xmppserver.Connect)
 	var disconnectbus = make(chan xmppserver.Disconnect)
 
-	// restore from saved contact state
+	// TODO: restore from saved contact state
 
 	//TODO: If multiple accounts can be used, modify accordingly
 	accountnames := p.accounts.ListIDs()
@@ -105,8 +109,12 @@ func newXMPPListener(p *Proxy) (*xmppListener, error) {
 		l.log.Errorf("Accountstore has not exactly one account")
 		return nil, err
 	}
+	l.log.Debugf("starting xmpp listener as account %s", l.Accountname)
+	l.Accountname = accountnames[0]
+	l.Roster = []string{accountnames[0]}
+	l.RosterLock = &sync.Mutex{}
 
-	l.a = &AccountManager{Online: []string{accountnames[0]}, OnlineLock: &sync.Mutex{}, Proxy: p,
+	l.a = &AccountManager{Proxy: p,
 	 log: p.logBackend.GetLogger("listener/AccountManager")}
 
 	l.server = xmppserver.Server{
@@ -218,6 +226,25 @@ func (l *eventListener) onKaetzchenReply(e *event.KaetzchenReplyEvent) {
 	}*/
 }
 
+func setSender(xmlmessage interface{}, sender string) ([]byte, error) {
+	parsed, ok := xmlmessage.(*xmppserver.ClientMessage)
+	if !ok {
+		return nil, nil
+	}
+	parsed.From = sender
+	data, err := xml.Marshal(parsed)
+	return data, err
+}
+
+func getMessageBodyContent(xmlmessage []byte) (string, error) {
+	var parsed xmppserver.ClientMessage
+	err := xml.Unmarshal(xmlmessage, &parsed)
+	if err != nil {
+		return "", err
+	}
+	return parsed.Body, nil
+}
+
 func (l *eventListener) onMessageReceived(e *event.MessageReceivedEvent) {
 	// e contains the msg id
 	// theoretically we would like the message belonging to that id
@@ -232,8 +259,31 @@ func (l *eventListener) onMessageReceived(e *event.MessageReceivedEvent) {
 		l.log.Warningf("ReceivePop() failed for %v", e.AccountID)
 		return
 	}
+	//TODO: Decision if we strip everything but body content
+	// The absolute minimum we need to do here is set message from= to
+	// the cryptographically signed sender
+	//wrapped := fmt.Sprintf("<message from='%s' type='chat'><body>%s</body></message>", message.SenderID, message.Payload)
+	//l.p.xmppListener.Loopreceiver <- []byte(wrapped)
+	/*bodyContent, err := getMessageBodyContent(string(message.Payload))
+	if err == nil {
+		if bodyContent == "" {
+			l.log.Debugf("Received message with empty body from %s", message.SenderID)
+		} else {
+			wrapped := "<message from='testxmpp@provider-28490' type='chat'><body>" + bodyContent + "</body></message>"
+			l.p.xmppListener.Loopreceiver <- []byte(wrapped)
+			l.log.Debugf("Message from %v deliviered to xmpp client", message.SenderID)
+		}
+	} else {
+		l.log.Errorf("Could not extract body from XML: %s", message.Payload, err)
+	}*/
 	wrapped := fmt.Sprintf("<message from='%s' type='chat'><body>%s</body></message>", message.SenderID, message.Payload)
 	l.p.xmppListener.Loopreceiver <- []byte(wrapped)
+	/*data, err := setSender(message.Payload, message.SenderID)
+	if err != nil {
+		l.log.Errorf("Error Marshalling XML", err)
+	} else {
+		l.p.xmppListener.Loopreceiver <- []byte(data)
+	}*/
 }
 
 func (l *eventListener) prune(t time.Time) {
@@ -276,7 +326,7 @@ func (l *eventListener) worker() {
 			case *event.KaetzchenReplyEvent:
 				l.onKaetzchenReply(e)
 			case *event.MessageReceivedEvent:
-				l.onMessageReceived(e) //TODO: give this to xmpp channel
+				l.onMessageReceived(e)
 			default: //TODO: else what?
 			}
 		}
@@ -295,8 +345,6 @@ func newEventListener(p *Proxy) *eventListener {
 
 // AccountManager deals with understanding the local set of talek logs in use and remote users
 type AccountManager struct {
-	Online []string
-	OnlineLock    *sync.Mutex
 	Proxy *Proxy
 	log *logging.Logger
 }
@@ -316,16 +364,13 @@ func (a AccountManager) CreateAccount(username, password string) (success bool, 
 
 // OnlineRoster is called periodically by client
 func (a AccountManager) OnlineRoster(jid string) (online []string, err error) {
-	a.OnlineLock.Lock()
-	defer a.OnlineLock.Unlock()
+	a.Proxy.xmppListener.RosterLock.Lock()
+	defer a.Proxy.xmppListener.RosterLock.Unlock()
 
-	// For status
-	/*online = append(online, "status")
-	for person := range a.Online {
+	for _,person := range a.Proxy.xmppListener.Roster {
 		online = append(online, person)
-	}*/
-	// TODO: Is this bad because xmppserver modifies it?
-	online = a.Online
+	}
+	online = a.Proxy.xmppListener.Roster
 	return
 }
 
@@ -334,36 +379,48 @@ func (a AccountManager) OnlineRoster(jid string) (online []string, err error) {
 func (a AccountManager) RouteRoutine(bus <-chan xmppserver.Message) {
 	for {
 		message := <-bus
-		var data []byte
-		a.OnlineLock.Lock()
-
 		a.log.Infof("Routing Message: %s -> %s", message.To, message.Data)
-		//if ok = a.Online[message.To]; ok {
-			switch message.Data.(type) {
-			case []byte:
-				data = message.Data.([]byte)
-			default:
-				var err error
-				data, err = xml.Marshal(message.Data)
-				if err != nil {
-					panic(err)
-				}
-			}
-			account, accountID, err := a.Proxy.getAccount(a.Proxy.xmppListener.Accountname)
+		var messagedata []byte
+		var err error
+
+		switch message.Data.(type) {
+		case []byte:
+			messagedata = message.Data.([]byte)
+		case string:
+			messagedata = []byte(message.Data.(string))
+		default:
+			messagedata, err = xml.Marshal(message.Data)
 			if err != nil {
-				a.log.Errorf("No account matching %s", a.Proxy.xmppListener.Accountname)
-				panic("No matching account to send from")
+				panic(err)
 			}
-			recipient, err := a.Proxy.toAccountRecipient(message.To)
-			if err != nil {
-				a.log.Errorf("No recipient found for %s using accountID %v", message.To, accountID)
-				panic("No matching recipient")
-			}
-			if _, err := account.EnqueueMessage(recipient, data, false); err != nil {
-				//TODO: false was isUnreliable, check for problems later on
-				a.log.Errorf("Failed to enqueue for '%v': %v", recipient, err)
-			}
-		a.OnlineLock.Unlock()
+		}
+
+		bodyContent, err := getMessageBodyContent(messagedata)
+		if err != nil {
+			a.log.Error("Could not parse XML from client", err)
+			panic(err)
+		}
+		if bodyContent == "" {
+			a.log.Debugf("Received message with empty body from XMPP client, not routing it")
+			continue
+		}
+
+		//TODO: only send <body> content, this breaks a lot, but is the only easy and sensible thing to do
+		//TODO: or not?
+
+		account, accountID, err := a.Proxy.getAccount(a.Proxy.xmppListener.Accountname)
+		if err != nil {
+			a.log.Errorf("No account matching %s", a.Proxy.xmppListener.Accountname)
+			panic("No matching account to send from")
+		}
+		recipient, err := a.Proxy.toAccountRecipient(message.To)
+		if err != nil {
+			a.log.Errorf("No recipient found for %s using accountID %v", message.To, accountID)
+			panic("No matching recipient")
+		}
+		if _, err := account.EnqueueMessage(recipient, []byte(bodyContent), false); err != nil {
+			a.log.Errorf("Failed to enqueue for '%v': %v", recipient, err)
+		}
 	}
 }
 
@@ -374,12 +431,7 @@ func (a AccountManager) RouteRoutine(bus <-chan xmppserver.Message) {
 func (a AccountManager) ConnectRoutine(bus <-chan xmppserver.Connect) {
 	for {
 		message := <-bus
-		a.OnlineLock.Lock()
-		//localPart := strings.SplitN(message.Jid, "@", 2)[0]
-		//a.Online = append(a.Online, a.p.l.Accountname)
-		//a.log.Infof("Adding %s to roster", localPart)
 		a.Proxy.xmppListener.Loopreceiver = message.Receiver
-		a.OnlineLock.Unlock()
 	}
 }
 
@@ -404,7 +456,7 @@ func (e *RosterManagementExtension) Process(message interface{}, from *xmppserve
 		e.Accounts.log.Debugf("Presence request received")
 	    // I would ignore status anyway, so simply drop any presence stanzas
 		// TODO: Proper way to handle this?
-		for _,person := range e.Accounts.Online {
+		for _,person := range e.Accounts.Proxy.xmppListener.Roster {
 			from.Send([]byte("<presence from='" + person + "' to='" + from.Jid() + "' />"))
 		}
 	} else if ok {
@@ -438,23 +490,21 @@ func (e *RosterManagementExtension) Process(message interface{}, from *xmppserve
 			// nil here was entity, this needs adaption to xmpp instead of imf anyway
 			e.Accounts.Proxy.eventListener.enqueueLaterCh <- &enqueueLater{string(msgID), accountID, recipient.ID, nil, nil, false, expire}
 		} else {
-			// TODO: some sort of actual subscription mechanism?
-			/*if _, err = account.EnqueueMessage(recipient, payload, false); err != nil {
-				e.Accounts.log.Errorf("Failed to enqueue for '%v': %v", recipient, err)
-			}*/
 		}
-		e.Accounts.OnlineLock.Lock()
-		e.Accounts.Online = append(e.Accounts.Online, parsedPresence.To)
-		e.Accounts.OnlineLock.Unlock()
-		/*
-		sender := func(msg []byte) {
-			wrapped := fmt.Sprintf("<message from='%s@talexmpp/talek' type='chat'><body>%s</body></message>", parsedPresence.To, msg)
-			from.Send([]byte(wrapped))
+		e.Accounts.log.Infof("Adding %s to Roster", parsedPresence.To)
+		e.Accounts.Proxy.xmppListener.RosterLock.Lock()
+		e.Accounts.Proxy.xmppListener.Roster = append(e.Accounts.Proxy.xmppListener.Roster, parsedPresence.To)
+		e.Accounts.Proxy.xmppListener.RosterLock.Unlock()
+
+		// After a subscription the server needs to set the new roster to all
+		// resources
+		roster, _ := e.Accounts.OnlineRoster(from.Jid())
+		msg := fmt.Sprintf("<iq id='%v' to='%s type='set'><query xmlns='jabber:iq:roster' ver='ver7'>", xmppserver.CreateCookie(), from.Jid())
+		for _, v := range roster {
+			msg = msg + "<item jid='" + v + "'/>"
 		}
-		fromUser := contact.Channel(&sender)
-		e.Accounts.Online[parsedPresence.To] = fromUser
-		from.Send([]byte("<message from='status@talexmpp' type='chat'><body>Contact generated. Offer:\n" + string(offer) + "</body></message>"))
-        */
+		msg = msg + "</query></iq>"
+		e.Accounts.log.Infof("Sending back roster")
+		from.Send([]byte(msg))
 	}
-	//parsedMessage, ok := message.(*xmppserver.ClientMessage)
 }
