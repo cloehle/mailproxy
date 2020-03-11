@@ -27,9 +27,10 @@ import (
     "sync"
 	"fmt"
 	"encoding/xml"
-	//"strings"
-    //SMTP:
-    "github.com/cloehle/xmppproxy/internal/account"
+	"encoding/base64"
+	"strings"
+
+	"github.com/cloehle/xmppproxy/internal/account"
     "github.com/cloehle/xmppproxy/internal/imf"
     "github.com/cloehle/xmppproxy/event"
     "github.com/emersion/go-message"
@@ -51,6 +52,7 @@ type xmppListener struct {
 	Accountname string
 	Roster []string
 	RosterLock *sync.Mutex
+	BodyContentOnly bool
 }
 
 func (l *xmppListener) Halt() {
@@ -86,7 +88,7 @@ func (l *xmppListener) worker() {
 	// NOTREACHED
 }
 
-func newXMPPListener(p *Proxy) (*xmppListener, error) {
+func newXMPPListener(p *Proxy, bodyContentOnly bool) (*xmppListener, error) {
 	l := new(xmppListener)
 	l.p = p
 	l.log = p.logBackend.GetLogger("listener/xmpp")
@@ -101,9 +103,13 @@ func newXMPPListener(p *Proxy) (*xmppListener, error) {
 	var connectbus = make(chan xmppserver.Connect)
 	var disconnectbus = make(chan xmppserver.Disconnect)
 
+	l.BodyContentOnly = bodyContentOnly
+
 	// TODO: restore from saved contact state
 
 	//TODO: If multiple accounts can be used, modify accordingly
+	//but this is a big IF for the future, I dont think this feature
+	// is or ever was useful/advisable
 	accountnames := p.accounts.ListIDs()
 	if len(accountnames) != 1 {
 		l.log.Errorf("Accountstore has not exactly one account")
@@ -193,47 +199,46 @@ func (l *eventListener) onKaetzchenReply(e *event.KaetzchenReplyEvent) {
 	}
 	if e.Err != nil {
 		l.log.Warningf("KaetzchenReplyEvent received with error: %v", e.Err)
-		r.sendIMFFailure(acc, e.Err)
 		return
 	}
 	user, pubKey, err := l.p.ParseKeyQueryResponse(e.Payload)
 	if err != nil {
 		l.log.Warningf("ParseKeyQueryResponse returned %v", err)
-		r.sendIMFFailure(acc, err)
 		return
 	}
 	if user != rcpt.User {
 		l.log.Warningf("ParseKeyQueryResponse returned WRONG USER, wanted %v got %v", rcpt.User, user)
-		r.sendIMFFailure(acc, errors.New("Keyserver returned PublicKey for WRONG USER!"))
 		return
 	}
 	l.log.Noticef("Discovered key for %v: %v", r.rID, pubKey)
 	l.p.SetRecipient(r.rID, pubKey)
-	report, err := imf.KeyLookupSuccess(r.accID, r.rID, pubKey)
-	if err != nil {
-		l.log.Warningf("Failed to produce KeyLookupSuccess report: %v", err)
-		return
-	}
-	acc.StoreReport(report)
 	rcpt, err = l.p.toAccountRecipient(r.rID)
 	if err != nil {
 		l.log.Warningf("Failed to lookup freshly discovered account: %v", err)
 		return
 	}
-	/*_, err = acc.EnqueueMessage(rcpt, *r.payload, r.isUnreliable)
-	if err != nil {
-		r.sendIMFFailure(acc, err)
-	}*/
+	if l.p.xmppListener.BodyContentOnly {
+		// If we only send actual content messages, there is no good way or use
+		// to notify recipient that we queried their key
+		return
+	}
+	//subscription will always trigger kaetzchen keyserver loopup @ recipient => subscription too, right?
+	request := fmt.Sprintf("<presence from='%s' id='%x' to='%s' type='subscribe' xmlns='jabber:client'/>", l.p.xmppListener.Accountname, xmppserver.CreateCookie(), rcpt.ID)
+
+	if _, err := acc.EnqueueMessage(rcpt, []byte(request), false); err != nil {
+		l.log.Errorf("Failed to enqueue for '%v': %v", rcpt, err)
+	}
+
 }
 
-func setSender(xmlmessage interface{}, sender string) ([]byte, error) {
-	parsed, ok := xmlmessage.(*xmppserver.ClientMessage)
-	if !ok {
-		return nil, nil
+func setSenderMessage(xmlmessage []byte, sender string) ([]byte, error) {
+	var parsed xmppserver.ClientMessage
+	err := xml.Unmarshal(xmlmessage, &parsed)
+	if err != nil {
+		return xmlmessage, err
 	}
 	parsed.From = sender
-	data, err := xml.Marshal(parsed)
-	return data, err
+	return xml.Marshal(parsed)
 }
 
 func getMessageBodyContent(xmlmessage []byte) (string, error) {
@@ -259,31 +264,48 @@ func (l *eventListener) onMessageReceived(e *event.MessageReceivedEvent) {
 		l.log.Warningf("ReceivePop() failed for %v", e.AccountID)
 		return
 	}
-	//TODO: Decision if we strip everything but body content
-	// The absolute minimum we need to do here is set message from= to
-	// the cryptographically signed sender
-	//wrapped := fmt.Sprintf("<message from='%s' type='chat'><body>%s</body></message>", message.SenderID, message.Payload)
-	//l.p.xmppListener.Loopreceiver <- []byte(wrapped)
-	/*bodyContent, err := getMessageBodyContent(string(message.Payload))
-	if err == nil {
-		if bodyContent == "" {
-			l.log.Debugf("Received message with empty body from %s", message.SenderID)
-		} else {
-			wrapped := "<message from='testxmpp@provider-28490' type='chat'><body>" + bodyContent + "</body></message>"
-			l.p.xmppListener.Loopreceiver <- []byte(wrapped)
-			l.log.Debugf("Message from %v deliviered to xmpp client", message.SenderID)
+	if l.p.xmppListener.BodyContentOnly {
+		wrapped := fmt.Sprintf("<message from='%s' type='chat'><body>%s</body></message>", message.SenderID, message.Payload)
+		l.p.xmppListener.Loopreceiver <- []byte(wrapped)
+		return
+	}
+	// Now we need to check if it is a subscription or a message
+	if strings.HasPrefix(string(message.Payload), "<presence") {
+		var parsed xmppserver.ClientPresence
+		err := xml.Unmarshal(message.Payload, &parsed)
+		if err != nil {
+			l.log.Errorf("Error Unmarshalling XML", err)
+			return
 		}
-	} else {
-		l.log.Errorf("Could not extract body from XML: %s", message.Payload, err)
-	}*/
-	wrapped := fmt.Sprintf("<message from='%s' type='chat'><body>%s</body></message>", message.SenderID, message.Payload)
-	l.p.xmppListener.Loopreceiver <- []byte(wrapped)
-	/*data, err := setSender(message.Payload, message.SenderID)
-	if err != nil {
-		l.log.Errorf("Error Marshalling XML", err)
-	} else {
+		parsed.From = message.SenderID
+		data, err := xml.Marshal(parsed)
+		if err != nil {
+			l.log.Errorf("Error Marshalling XML", err)
+			return
+		}
 		l.p.xmppListener.Loopreceiver <- []byte(data)
-	}*/
+		// If it is a subscription request, we send an additional message with
+		// the senders key, so that client can add/deny based on the key
+		if parsed.Type == "subscribe" {
+			sender, err := l.p.GetRecipient(message.SenderID)
+			if err != nil {
+				l.log.Warningf("Invalid Subscribe argument", err);
+				return
+			}
+			request := fmt.Sprintf("<message from='%s' type='chat'><body>I would like to add you to my contacts, my key is:%s</body></message>", message.SenderID, base64.StdEncoding.EncodeToString(sender.Bytes()))
+			l.p.xmppListener.Loopreceiver <- []byte(request)
+		}
+	} else if strings.HasPrefix(string(message.Payload), "<message") {
+		data, err := setSenderMessage(message.Payload, message.SenderID)
+		if err != nil {
+			l.log.Errorf("Error marshalling XML", err)
+			return
+		}
+		l.p.xmppListener.Loopreceiver <- []byte(data)
+
+	} else {
+			l.log.Errorf("Received unsupported XMPP, neither presence nor message: %s", string(message.Payload))
+	}
 }
 
 func (l *eventListener) prune(t time.Time) {
@@ -379,7 +401,6 @@ func (a AccountManager) OnlineRoster(jid string) (online []string, err error) {
 func (a AccountManager) RouteRoutine(bus <-chan xmppserver.Message) {
 	for {
 		message := <-bus
-		a.log.Infof("Routing Message: %s -> %s", message.To, message.Data)
 		var messagedata []byte
 		var err error
 
@@ -394,7 +415,6 @@ func (a AccountManager) RouteRoutine(bus <-chan xmppserver.Message) {
 				panic(err)
 			}
 		}
-
 		bodyContent, err := getMessageBodyContent(messagedata)
 		if err != nil {
 			a.log.Error("Could not parse XML from client", err)
@@ -404,9 +424,12 @@ func (a AccountManager) RouteRoutine(bus <-chan xmppserver.Message) {
 			a.log.Debugf("Received message with empty body from XMPP client, not routing it")
 			continue
 		}
-
-		//TODO: only send <body> content, this breaks a lot, but is the only easy and sensible thing to do
-		//TODO: or not?
+		if a.Proxy.xmppListener.BodyContentOnly {
+			a.log.Infof("Routing Content Message: %s -> %s", message.To, message.Data)
+			messagedata = []byte(bodyContent)
+		} else {
+			a.log.Infof("Routing XMPP Message: %s -> %s", message.To, message.Data)
+		}
 
 		account, accountID, err := a.Proxy.getAccount(a.Proxy.xmppListener.Accountname)
 		if err != nil {
@@ -418,7 +441,7 @@ func (a AccountManager) RouteRoutine(bus <-chan xmppserver.Message) {
 			a.log.Errorf("No recipient found for %s using accountID %v", message.To, accountID)
 			panic("No matching recipient")
 		}
-		if _, err := account.EnqueueMessage(recipient, []byte(bodyContent), false); err != nil {
+		if _, err := account.EnqueueMessage(recipient, []byte(messagedata), false); err != nil {
 			a.log.Errorf("Failed to enqueue for '%v': %v", recipient, err)
 		}
 	}
@@ -490,6 +513,11 @@ func (e *RosterManagementExtension) Process(message interface{}, from *xmppserve
 			// nil here was entity, this needs adaption to xmpp instead of imf anyway
 			e.Accounts.Proxy.eventListener.enqueueLaterCh <- &enqueueLater{string(msgID), accountID, recipient.ID, nil, nil, false, expire}
 		} else {
+			request := fmt.Sprintf("<presence from='%s' id='%x' to='%s' type='subscribe' xmlns='jabber:client'/>", e.Accounts.Proxy.xmppListener.Accountname, xmppserver.CreateCookie(), recipient.ID)
+			if _, err := account.EnqueueMessage(recipient, []byte(request), false); err != nil {
+				e.Accounts.log.Errorf("Failed to enqueue for '%v': %v", recipient, err)
+			}
+			e.Accounts.log.Infof("Skipped Kaetzchen Request as %s is already known", parsedPresence.To)
 		}
 		e.Accounts.log.Infof("Adding %s to Roster", parsedPresence.To)
 		e.Accounts.Proxy.xmppListener.RosterLock.Lock()
@@ -499,7 +527,7 @@ func (e *RosterManagementExtension) Process(message interface{}, from *xmppserve
 		// After a subscription the server needs to set the new roster to all
 		// resources
 		roster, _ := e.Accounts.OnlineRoster(from.Jid())
-		msg := fmt.Sprintf("<iq id='%v' to='%s type='set'><query xmlns='jabber:iq:roster' ver='ver7'>", xmppserver.CreateCookie(), from.Jid())
+		msg := fmt.Sprintf("<iq id='%x' to='%s type='set'><query xmlns='jabber:iq:roster' ver='ver7'>", xmppserver.CreateCookie(), from.Jid())
 		for _, v := range roster {
 			msg = msg + "<item jid='" + v + "'/>"
 		}
